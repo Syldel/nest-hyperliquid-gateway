@@ -26,6 +26,7 @@ import {
   HLApiOrder,
   HLOrderGrouping,
   HLOrderBuilder,
+  HLPlaceOrderResponse,
 } from '../interfaces';
 import { HyperliquidConfigService } from '../config/hyperliquid-config.service';
 import { NonceManagerService } from '../../crypto/services/nonce-manager.service';
@@ -135,33 +136,6 @@ export class HyperliquidApiTradeService {
   }
 
   /**
-   * Méthode pour les requêtes sans nonce
-   */
-  private async executeWithoutNonce<T, R>(
-    endpoint: string,
-    data: T,
-    isTestnet: boolean = false,
-  ): Promise<R> {
-    const response = await fetch(`${this.getApiUrl(isTestnet)}/${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-
-    if (!response.ok) {
-      const errorData: unknown = await response.json().catch(() => ({}));
-      if ((errorData as HLErrorResponse).message) {
-        throw new Error(
-          `Hyperliquid API error: ${(errorData as HLErrorResponse).message}`,
-        );
-      }
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return response.json() as Promise<R>;
-  }
-
-  /**
    * Generate a Client Order ID (cloid) suitable for Hyperliquid orders.
    * - Optional 128-bit hexadecimal string.
    * - Example: "0x1234567890abcdef1234567890abcdef"
@@ -227,24 +201,31 @@ export class HyperliquidApiTradeService {
   /**
    * Place un ordre sur Hyperliquid.
    */
-  async placeOrder(
-    order: HLOrderDetails,
-    grouping: HLOrderGrouping = 'na',
-    builder?: HLOrderBuilder,
-    isTestnet: boolean = false,
-  ): Promise<HLSuccessResponse> {
-    return await this.placeOrders([order], grouping, builder, isTestnet);
+  async placeOrder(params: {
+    order: HLOrderDetails;
+    grouping?: HLOrderGrouping;
+    builder?: HLOrderBuilder;
+    isTestnet?: boolean;
+  }): Promise<HLSuccessResponse<HLPlaceOrderResponse>> {
+    const { order, grouping = 'na', builder, isTestnet = false } = params;
+    return await this.placeOrders({
+      orders: [order],
+      grouping,
+      builder,
+      isTestnet,
+    });
   }
 
   /**
    * Place des ordres sur Hyperliquid.
    */
-  async placeOrders(
-    orders: HLOrderDetails[],
-    grouping: HLOrderGrouping = 'na',
-    builder?: HLOrderBuilder,
-    isTestnet: boolean = false,
-  ): Promise<HLSuccessResponse> {
+  async placeOrders(params: {
+    orders: HLOrderDetails[];
+    grouping?: HLOrderGrouping;
+    builder?: HLOrderBuilder;
+    isTestnet?: boolean;
+  }): Promise<HLSuccessResponse<HLPlaceOrderResponse>> {
+    const { orders, grouping = 'na', builder, isTestnet = false } = params;
     const apiOrders: HLApiOrder[] = orders.map((order) => {
       // order.cloid = this.generateCloid();
       return this.convertToApiOrder(order);
@@ -260,11 +241,10 @@ export class HyperliquidApiTradeService {
       action.builder = builder;
     }
 
-    return this.executeWithNonce<HLOrderAction, HLSuccessResponse>(
-      'exchange',
-      action,
-      isTestnet,
-    );
+    return this.executeWithNonce<
+      HLOrderAction,
+      HLSuccessResponse<HLPlaceOrderResponse>
+    >('exchange', action, isTestnet);
   }
 
   /**
@@ -315,12 +295,15 @@ export class HyperliquidApiTradeService {
    * Annule un ou plusieurs ordres par OID.
    */
   async cancelOrder(
-    cancels: Array<{ a: number; o: number }>,
+    cancels: Array<{
+      asset: number;
+      oid: number;
+    }>,
     isTestnet: boolean = false,
   ): Promise<HLCancelResponse> {
     const action: HLCancelAction = {
       type: 'cancel',
-      cancels,
+      cancels: cancels.map((c) => ({ a: c.asset, o: c.oid })),
     };
 
     return this.executeWithNonce<HLCancelAction, HLCancelResponse>(

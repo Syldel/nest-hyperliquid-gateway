@@ -9,6 +9,7 @@ import {
   HLPerpMarket,
   HLPerpMetaAndCtx,
   HLOrderStatusResponse,
+  HLPerpAssetCtx,
 } from '../interfaces';
 import { HyperliquidConfigService } from '../config/hyperliquid-config.service';
 
@@ -222,13 +223,19 @@ export class HyperliquidApiInfoService {
 
   private buildMarkets(metaAndCtx: HLPerpMetaAndCtx): HLPerpMarket[] {
     const [meta, ctxs] = metaAndCtx;
-    return meta.universe.map((market, idx) => ({
-      index: idx,
-      ...market,
-      markPrice: ctxs[idx] ? parseFloat(ctxs[idx].markPx) : undefined,
-      midPrice: ctxs[idx] ? parseFloat(ctxs[idx].midPx) : undefined,
-      funding: ctxs[idx] ? parseFloat(ctxs[idx].funding) : undefined,
-      openInterest: ctxs[idx] ? parseFloat(ctxs[idx].openInterest) : undefined,
-    }));
+
+    let ctx: HLPerpAssetCtx;
+    return meta.universe.map((market, idx) => {
+      ctx = ctxs[idx];
+
+      return {
+        index: idx,
+        ...market,
+        markPrice: ctx?.markPx,
+        midPrice: ctx?.midPx,
+        funding: ctx?.funding,
+        openInterest: ctx?.openInterest,
+      };
+    });
   }
 }

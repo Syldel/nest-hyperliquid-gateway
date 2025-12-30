@@ -30,12 +30,12 @@ export class HyperliquidTradeController {
    */
   @Post('order')
   async placeOrder(@Body() body: PlaceOrderDto) {
-    return this.hyperliquidApiTradeService.placeOrder(
-      body.order,
-      body.grouping,
-      body.builder,
-      body.isTestnet,
-    );
+    return this.hyperliquidApiTradeService.placeOrder({
+      order: body.order,
+      grouping: body.grouping,
+      builder: body.builder,
+      isTestnet: body.isTestnet,
+    });
   }
 
   /**
@@ -45,12 +45,8 @@ export class HyperliquidTradeController {
   @Post('order/cancel')
   async cancelOrder(@Body() body: CancelOrderDto) {
     // Conversion des propriétés pour correspondre à HLCancelAction
-    const formattedCancels = body.cancels.map((cancel) => ({
-      a: cancel.asset,
-      o: cancel.oid,
-    }));
     return this.hyperliquidApiTradeService.cancelOrder(
-      formattedCancels,
+      body.cancels,
       body.isTestnet,
     );
   }

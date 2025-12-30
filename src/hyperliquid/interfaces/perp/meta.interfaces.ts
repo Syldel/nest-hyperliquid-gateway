@@ -1,3 +1,5 @@
+import { DecimalString } from '../orders';
+
 export interface HLPerpMarketInfo {
   name: string;
   szDecimals: number;
@@ -53,8 +55,8 @@ export interface HLPerpMarket {
   szDecimals: number; // Décimales du prix
   maxLeverage: number; // Levier max
   marginTableId?: number; // Id de la table de marge (si applicable)
-  markPrice?: number; // Prix actuel du marché
-  midPrice?: number; // Prix mid
-  funding?: number; // Taux de funding
-  openInterest?: number; // Open interest
+  markPrice?: DecimalString; // Prix actuel du marché
+  midPrice?: DecimalString; // Prix mid
+  funding?: DecimalString; // Taux de funding
+  openInterest?: DecimalString; // Open interest
 }

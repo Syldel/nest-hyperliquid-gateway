@@ -52,6 +52,8 @@ export class HyperliquidInfoController {
    * - oraclePrice
    * - funding
    * - open interest
+   *
+   * (type: 'meta' with mapped universe)
    */
   @Get('perp-assets')
   async getPerpAssets(@Query('testnet') testnet?: string) {
@@ -107,6 +109,8 @@ export class HyperliquidInfoController {
    * - prix oracle
    * - prix mid
    * - volume, etc.
+   *
+   * (type: 'spotMeta' with mapped universe)
    */
   @Get('spot-assets')
   async getSpotAssets(@Query('testnet') testnet?: string) {

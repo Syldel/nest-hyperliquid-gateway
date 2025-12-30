@@ -55,7 +55,7 @@ export interface HLOrderStatusData {
 }
 
 export interface HLOrderStatusResponse {
-  status: 'order';
+  status: 'order' | 'unknownOid';
   order: HLOrderStatusData;
 }
 
