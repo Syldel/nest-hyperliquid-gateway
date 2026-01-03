@@ -3,14 +3,18 @@ export interface HLSuccessResponse<T = any> {
   response: T;
 }
 
+export type HLCancelStatus =
+  | 'success'
+  | {
+      error: string;
+    };
+
 export interface HLCancelResponse {
   status: 'ok';
   response: {
     type: 'cancel';
     data: {
-      statuses: Array<{
-        error?: string;
-      }>;
+      statuses: HLCancelStatus[];
     };
   };
 }

@@ -5,11 +5,15 @@ import { AppModule } from './app.module';
 import { ValidationExceptionFilter } from './filters/validation-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  const app = await NestFactory.create(AppModule, {
+    logger: isProduction
+      ? ['error', 'warn']
+      : ['log', 'debug', 'verbose', 'warn', 'error'],
+  });
 
   /* ********************************************** */
-
-  const isProduction = process.env.NODE_ENV === 'production';
 
   // INFO: Avec origin: '*', il faut normalement mettre => credentials: false
   let origin: string | string[];

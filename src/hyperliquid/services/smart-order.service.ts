@@ -92,6 +92,7 @@ export class SmartOrderService {
           limit: { tif: 'Alo' },
         },
       };
+      this.logger.log(`Place order: ${JSON.stringify(oParams)}`);
       const order = await this.tradeService.placeOrder({
         order: oParams,
         isTestnet,
@@ -119,15 +120,35 @@ export class SmartOrderService {
 
         if (timedOut && finalStatus === 'open') {
           // ordre toujours ouvert → on cancel
-          await this.tradeService.cancelOrder(
+          const cancelResult = await this.tradeService.cancelOrder(
             [{ asset: market.index, oid }],
             isTestnet,
           );
-          //console.log(`Order ${oid} canceled due to timeout`);
+
+          const cancelStatuses = cancelResult?.response?.data?.statuses ?? [];
+          const hasCancelSuccess = cancelStatuses.some((s) => s === 'success');
+          const cancelErrors = cancelStatuses
+            .filter((s) => typeof s === 'object' && 'error' in s)
+            .map((s) => s.error);
+
+          if (hasCancelSuccess) {
+            this.logger.log(`Order ${oid} canceled due to timeout`);
+          }
+          if (cancelErrors.length > 0) {
+            this.logger.warn(
+              `Order ${oid} cancel returned errors: ${cancelErrors.join(' | ')}`,
+            );
+          }
+
+          const lastStatus = await this.infoService.getOrderStatus(
+            oid,
+            isTestnet,
+          );
+          return lastStatus?.order;
         } else if (finalStatus === 'filled' || finalStatus === 'triggered') {
-          //console.log(`Order ${oid} executed successfully`);
+          // this.logger.log(`Order ${oid} executed successfully`);
         } else {
-          //console.error(`Order ${oid} failed with status ${finalStatus}`);
+          this.logger.log(`Order ${oid} failed with status ${finalStatus}`);
         }
 
         return raw;
@@ -207,6 +228,7 @@ export class SmartOrderService {
     const statuses = response.data.statuses;
 
     for (const s of statuses) {
+      this.logger.log(`Open order status: ${JSON.stringify(s)}`);
       if ('error' in s) {
         const code = this.mapOrderErrorToCode(s.error);
         if (code === 'POST_ONLY_REJECTED') {
@@ -266,6 +288,7 @@ export class SmartOrderService {
       }
 
       const s = status.order.status;
+      this.logger.log(`Order ${oid} status: ${s}`);
 
       // État exécuté
       if (s === 'filled' || s === 'triggered') {
