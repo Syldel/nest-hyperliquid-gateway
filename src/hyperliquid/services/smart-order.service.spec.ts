@@ -90,7 +90,7 @@ describe('SmartOrderService', () => {
     expect(waitOrderSpy).toHaveBeenCalled();
   });
 
-  it('should retry when order returns an error status', async () => {
+  it('should retry when order returns an "post only" error', async () => {
     const marketData = [{ name: 'BTC', markPrice: '50000', szDecimals: 8 }];
     (infoService.getPerpMarketsWithPrices as jest.Mock).mockResolvedValue(
       marketData,
@@ -106,7 +106,9 @@ describe('SmartOrderService', () => {
       response: {
         type: 'order',
         data: {
-          statuses: [{ error: 'Order must have minimum value of $10.' }],
+          statuses: [
+            { error: 'post only order would have immediately matched' },
+          ],
         },
       },
     };
@@ -137,6 +139,44 @@ describe('SmartOrderService', () => {
 
     expect(placeOrderSpy).toHaveBeenCalledTimes(2);
     expect(waitOrderSpy).toHaveBeenCalled();
+  });
+
+  it('should not retry when order returns an "insufficient margin" error', async () => {
+    const marketData = [{ name: 'BTC', markPrice: '50000', szDecimals: 8 }];
+    (infoService.getPerpMarketsWithPrices as jest.Mock).mockResolvedValue(
+      marketData,
+    );
+
+    const errorResponse: HLSuccessResponse<HLPlaceOrderResponse> = {
+      status: 'ok',
+      response: {
+        type: 'order',
+        data: {
+          statuses: [{ error: 'insufficient margin' }],
+        },
+      },
+    };
+
+    placeOrderSpy.mockResolvedValueOnce(errorResponse);
+
+    const size: HLOrderSize = { type: 'base', sz: '0.01' };
+
+    await expect(
+      service.instantOrder({
+        assetName: 'BTC',
+        isBuy: true,
+        size,
+        maxRetries: 2,
+        delayMs: 0,
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        error: 'INSUFFICIENT_MARGIN',
+      },
+    });
+
+    expect(placeOrderSpy).toHaveBeenCalledTimes(1);
+    expect(waitOrderSpy).not.toHaveBeenCalled();
   });
 
   describe('waitForOrderFinalStatus', () => {

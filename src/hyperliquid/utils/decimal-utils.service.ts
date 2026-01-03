@@ -16,10 +16,16 @@ export class DecimalUtilsService {
     return Number(value.toFixed(decimals)).toString();
   }
 
+  /**
+   * Returns value raised to the power of exponent.
+   */
   private pow10(decimals: number): bigint {
     return BigInt(10) ** BigInt(decimals);
   }
 
+  /**
+   * Converts a decimal string to a BigInt, scaling by the given number of decimals.
+   */
   private parseToBigInt(
     value: DecimalString,
     decimals: number,
@@ -77,10 +83,16 @@ export class DecimalUtilsService {
     return result.toFixed(decimals);
   }
 
+  /**
+   * Returns true if value is strictly greater than other. (a > b)
+   */
   gt(a: DecimalString, b: DecimalString): boolean {
     return this.parse(a) > this.parse(b);
   }
 
+  /**
+   * Returns true if value is less than or equal to other. (a <= b)
+   */
   lte(a: DecimalString, b: DecimalString): boolean {
     return this.parse(a) <= this.parse(b);
   }

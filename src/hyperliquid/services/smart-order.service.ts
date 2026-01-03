@@ -7,6 +7,7 @@ import {
 
 import {
   DecimalString,
+  HLOrderDetails,
   HLOrderStatusData,
   HLOrderStatusResponse,
   HLPlaceOrderResponse,
@@ -36,7 +37,7 @@ export class SmartOrderService {
       size,
       isTestnet = false,
       maxRetries = 6,
-      delayMs = 2000,
+      delayMs = 4000,
     } = params;
 
     let attempt = 0;
@@ -61,60 +62,75 @@ export class SmartOrderService {
       } else if (size.type === 'quote') {
         sz = this.usdcToSize(size.usdc, price, market.szDecimals);
       } else {
-        sz = await this.resolveQuoteFromPercent({
+        const quoteValue = await this.resolveQuoteFromPercent({
           percent: size.percent,
           isTestnet,
         });
+        sz = this.usdcToSize(quoteValue, price, market.szDecimals);
       }
 
-      try {
-        const order = await this.tradeService.placeOrder({
-          order: {
-            assetName,
-            isBuy,
-            sz,
-            limitPx: price.toString(),
-            reduceOnly: false,
-            orderType: {
-              limit: { tif: 'Alo' },
-            },
-          },
-          isTestnet,
+      // TODO: Check if the minimum value is the same for all assets on Hyperliquid Perps
+      if (
+        this.decimalUtils.lte(
+          this.decimalUtils.multiply(sz, price, market.szDecimals),
+          '10',
+        )
+      ) {
+        throw new ConflictException({
+          error: 'ORDER_MIN_VALUE',
+          message: `Order must have minimum value of $10.`,
         });
+      }
 
-        if (this.shouldRetryOrder(order.response)) {
-          // log et retry
-        } else {
-          // ordre accepté
-          const poStatus = order.response.data.statuses[0];
-          const oid = poStatus.resting?.oid || poStatus.filled?.oid;
-          if (!oid) {
-            throw new Error('Instant order oid undefined');
-          }
+      const oParams: HLOrderDetails = {
+        assetName,
+        isBuy,
+        sz,
+        limitPx: price.toString(),
+        reduceOnly: false,
+        orderType: {
+          limit: { tif: 'Alo' },
+        },
+      };
+      const order = await this.tradeService.placeOrder({
+        order: oParams,
+        isTestnet,
+      });
 
-          const { finalStatus, raw, timedOut } =
-            await this.waitForOrderFinalStatus(this.infoService, {
-              oid,
-              isTestnet,
-            });
-
-          if (timedOut && finalStatus === 'open') {
-            // ordre toujours ouvert → on cancel
-            await this.tradeService.cancelOrder(
-              [{ asset: market.index, oid }],
-              isTestnet,
-            );
-            //console.log(`Order ${oid} canceled due to timeout`);
-          } else if (finalStatus === 'filled' || finalStatus === 'triggered') {
-            //console.log(`Order ${oid} executed successfully`);
-          } else {
-            //console.error(`Order ${oid} failed with status ${finalStatus}`);
-          }
-
-          return raw;
+      const decision = this.shouldRetryOrder(order.response);
+      if (decision.error) {
+        throw new ConflictException({
+          error: decision.error.code,
+          message: decision.error.message,
+        });
+      } else if (!decision.retry) {
+        // ordre accepté
+        const poStatus = order.response.data.statuses[0];
+        const oid = poStatus.resting?.oid || poStatus.filled?.oid;
+        if (!oid) {
+          throw new Error('Instant order oid undefined');
         }
-      } catch (err) {
-        console.error('err', err);
+
+        const { finalStatus, raw, timedOut } =
+          await this.waitForOrderFinalStatus(this.infoService, {
+            oid,
+            isTestnet,
+          });
+
+        if (timedOut && finalStatus === 'open') {
+          // ordre toujours ouvert → on cancel
+          await this.tradeService.cancelOrder(
+            [{ asset: market.index, oid }],
+            isTestnet,
+          );
+          //console.log(`Order ${oid} canceled due to timeout`);
+        } else if (finalStatus === 'filled' || finalStatus === 'triggered') {
+          //console.log(`Order ${oid} executed successfully`);
+        } else {
+          //console.error(`Order ${oid} failed with status ${finalStatus}`);
+        }
+
+        return raw;
       }
 
       await this.sleep(delayMs);
@@ -169,23 +185,55 @@ export class SmartOrderService {
     return this.decimalUtils.format(this.decimalUtils.parse(usdcToUse), 6);
   }
 
-  private shouldRetryOrder(response: HLPlaceOrderResponse): boolean {
+  private mapOrderErrorToCode(errorMsg?: string): string {
+    const msg = (errorMsg || '').toLowerCase();
+
+    if (msg.includes('minimum value')) return 'ORDER_MIN_VALUE';
+    if (msg.includes('insufficient margin')) return 'INSUFFICIENT_MARGIN';
+    if (msg.includes('post only')) return 'POST_ONLY_REJECTED';
+    if (msg.includes('ioc')) return 'IOC_REJECTED';
+    if (msg.includes('trigger')) return 'BAD_TRIGGER_PRICE';
+
+    return 'INSTANT_ORDER_FAILED';
+  }
+
+  private shouldRetryOrder(response: HLPlaceOrderResponse): {
+    retry: boolean;
+    error?: {
+      code: string;
+      message: string;
+    };
+  } {
     const statuses = response.data.statuses;
 
     for (const s of statuses) {
       if ('error' in s) {
-        return true; // ordre rejeté → on peut retenter
+        const code = this.mapOrderErrorToCode(s.error);
+        if (code === 'POST_ONLY_REJECTED') {
+          // ordre rejeté → on peut retenter
+          return { retry: true };
+        } else {
+          return {
+            retry: false,
+            error: {
+              code,
+              message: s.error || 'Unknown error',
+            },
+          };
+        }
       }
       if ('resting' in s) {
-        return false; // ordre placé → pas besoin de repasser
+        // ordre placé → pas besoin de repasser
+        return { retry: false };
       }
       if ('filled' in s) {
-        return false; // ordre exécuté → pas besoin de repasser
+        // ordre exécuté → pas besoin de repasser
+        return { retry: false };
       }
     }
 
     // si aucun status détecté (cas improbable)
-    return true;
+    return { retry: true };
   }
 
   async waitForOrderFinalStatus(
