@@ -48,6 +48,51 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Dépendances
+
+Ce projet vise à minimiser au maximum le nombre de dépendances afin de réduire la complexité, la surface d’attaque et faciliter la maintenance.
+
+Les dépendances sont volontairement limitées à :
+
+- `@msgpack/msgpack` (requis par Hyperliquid),
+
+- `@noble/hashes` pour les primitives cryptographiques,
+
+- `ethers` pour les interactions Ethereum.
+
+Pourquoi `ethers` ?
+
+Bien que `@paulmillr/micro-eth-signer` soit une librairie très légère, `ethers` a été retenue pour :
+
+- sa maturité et son usage éprouvé en production,
+
+- une API stable et bien documentée,
+
+- une meilleure intégration avec l’écosystème Ethereum,
+
+- une réduction du code auxiliaire nécessaire à la gestion des signatures et des formats.
+
+Ce choix permet de conserver un bon équilibre entre minimalisme, fiabilité et maintenabilité.
+
+## Hyperliquid API (Agent Wallet)
+
+Hyperliquid supporte les API wallets (agent wallets) permettant d’effectuer des actions au nom d’un compte sans permissions de retrait.
+Les requêtes d’information utilisent toujours l’adresse publique du compte principal.
+
+https://app.hyperliquid.xyz/API
+
+### Configuration
+
+À renseigner dans le fichier .env :
+```env
+HYPERLIQUID_ACCOUNT_ADDRESS=
+HYPERLIQUID_AGENT_PRIVATE_KEY=
+```
+
+- HYPERLIQUID_ACCOUNT_ADDRESS : adresse du compte principal
+
+- HYPERLIQUID_AGENT_PRIVATE_KEY : clé privée de l’agent wallet
+
 ## API using
 
 ### curl JSON pretty-print
