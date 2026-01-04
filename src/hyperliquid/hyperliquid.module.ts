@@ -4,6 +4,7 @@ import { CryptoModule } from '../crypto/crypto.module';
 import { HyperliquidTradeController } from './controllers/hyperliquid-trade.controller';
 import { HyperliquidInfoController } from './controllers/hyperliquid-info.controller';
 import { InstantOrderController } from './controllers/instant-order.controller';
+import { ProtectiveOrdersController } from './controllers/protective-order.controller';
 import { HyperliquidConfigService } from './config/hyperliquid-config.service';
 import { HyperliquidApiTradeService } from './services/hyperliquid-api-trade.service';
 import { HyperliquidApiInfoService } from './services/hyperliquid-api-info.service';
@@ -20,6 +21,7 @@ import { PriceMathService } from './services/price-math.service';
     HyperliquidTradeController,
     HyperliquidInfoController,
     InstantOrderController,
+    ProtectiveOrdersController,
   ],
   providers: [
     HyperliquidConfigService,

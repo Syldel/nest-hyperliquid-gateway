@@ -12,6 +12,7 @@ import {
   HLOrderStatusResponse,
   HLPlaceOrderResponse,
   InstantOrderParams,
+  ProtectiveOrderParams,
   WaitOrderStatusOptions,
 } from '../interfaces';
 import { HyperliquidApiInfoService } from './hyperliquid-api-info.service';
@@ -220,41 +221,34 @@ export class SmartOrderService {
 
   private shouldRetryOrder(response: HLPlaceOrderResponse): {
     retry: boolean;
-    error?: {
-      code: string;
-      message: string;
-    };
+    error?: { code: string; message: string };
   } {
     const statuses = response.data.statuses;
+
+    if (!statuses || statuses.length === 0) {
+      // Cas improbable, mais on retry
+      return { retry: true };
+    }
 
     for (const s of statuses) {
       this.logger.log(`Open order status: ${JSON.stringify(s)}`);
       if ('error' in s) {
         const code = this.mapOrderErrorToCode(s.error);
-        if (code === 'POST_ONLY_REJECTED') {
-          // ordre rejeté → on peut retenter
-          return { retry: true };
-        } else {
-          return {
-            retry: false,
-            error: {
-              code,
-              message: s.error || 'Unknown error',
-            },
-          };
-        }
+        const retryable = ['POST_ONLY_REJECTED', 'IOC_REJECTED'].includes(code);
+        return retryable
+          ? { retry: true }
+          : {
+              retry: false,
+              error: { code, message: s.error || 'Unknown error' },
+            };
       }
-      if ('resting' in s) {
-        // ordre placé → pas besoin de repasser
-        return { retry: false };
-      }
-      if ('filled' in s) {
-        // ordre exécuté → pas besoin de repasser
-        return { retry: false };
+
+      if ('resting' in s || 'filled' in s) {
+        return { retry: false }; // ordre bien passé
       }
     }
 
-    // si aucun status détecté (cas improbable)
+    // Aucun status clair → retry
     return { retry: true };
   }
 
@@ -321,5 +315,48 @@ export class SmartOrderService {
 
   sleep(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /* ************************************************************* */
+
+  async placeProtectiveOrder(params: HLOrderDetails, isTestnet = false) {
+    this.logger.log(`Place protective order: ${JSON.stringify(params)}`);
+
+    const response = await this.tradeService.placeOrder({
+      order: params,
+      isTestnet,
+    });
+
+    const statuses = response.response.data.statuses;
+    if (!statuses || statuses.length === 0) {
+      throw new Error('No order status returned from Hyperliquid');
+    }
+
+    const status = statuses[0];
+
+    if ('error' in status) {
+      const code = this.mapOrderErrorToCode(status.error);
+      throw new Error(`${code}: ${status.error}`);
+    }
+
+    // ordre placé avec succès (resting ou filled)
+    return response;
+  }
+
+  public toHLOrderDetails(params: ProtectiveOrderParams): HLOrderDetails {
+    return {
+      assetName: params.assetName,
+      isBuy: params.isBuy,
+      sz: params.sz,
+      limitPx: params.price,
+      reduceOnly: true, // forcé pour SL / TP
+      orderType: {
+        trigger: {
+          isMarket: params.isMarket ?? true,
+          triggerPx: params.price,
+          tpsl: params.kind,
+        },
+      },
+    };
   }
 }
