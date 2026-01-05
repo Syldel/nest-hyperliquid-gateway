@@ -10,6 +10,8 @@ import {
   HLPerpMetaAndCtx,
   HLOrderStatusResponse,
   HLPerpAssetCtx,
+  HLOpenOrdersResponse,
+  HLFrontendOpenOrdersResponse,
 } from '../interfaces';
 import { HyperliquidConfigService } from '../config/hyperliquid-config.service';
 
@@ -113,6 +115,59 @@ export class HyperliquidApiInfoService {
         type: 'orderStatus',
         user: this.config.accountAddress.toLowerCase(),
         oid,
+      },
+      isTestnet,
+    );
+  }
+
+  /**
+   * Retrieve the user's currently open orders.
+   *
+   * This method returns the raw open orders as provided by Hyperliquid.
+   * It only includes orders that are still active (not filled or canceled).
+   *
+   * @param dex Optional perp DEX name. Defaults to the primary perp DEX ("").
+   *            Spot open orders are only included when using the primary perp DEX.
+   * @param isTestnet Whether to use the Hyperliquid testnet.
+   *
+   * @returns A list of open orders currently active on the account.
+   */
+  async getOpenOrders(
+    dex: string = '',
+    isTestnet: boolean = false,
+  ): Promise<HLOpenOrdersResponse> {
+    return this.executeInfo<HLOpenOrdersResponse>(
+      {
+        type: 'openOrders',
+        user: this.config.accountAddress.toLowerCase(),
+        dex,
+      },
+      isTestnet,
+    );
+  }
+
+  /**
+   * Retrieve the user's currently open orders with additional frontend metadata.
+   *
+   * This method extends `getOpenOrders` by including extra fields such as
+   * order type, reduce-only flag, trigger information, and position TP/SL markers.
+   * It is recommended for trading bots and advanced order management logic.
+   *
+   * @param dex Optional perp DEX name. Defaults to the primary perp DEX ("").
+   *            Spot open orders are only included when using the primary perp DEX.
+   * @param isTestnet Whether to use the Hyperliquid testnet.
+   *
+   * @returns A list of enriched open orders with frontend-specific metadata.
+   */
+  async getFrontendOpenOrders(
+    dex: string = '',
+    isTestnet: boolean = false,
+  ): Promise<HLFrontendOpenOrdersResponse> {
+    return this.executeInfo<HLFrontendOpenOrdersResponse>(
+      {
+        type: 'frontendOpenOrders',
+        user: this.config.accountAddress.toLowerCase(),
+        dex,
       },
       isTestnet,
     );

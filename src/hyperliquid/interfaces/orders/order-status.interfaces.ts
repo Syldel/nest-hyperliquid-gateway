@@ -1,3 +1,5 @@
+import { DecimalString } from './order-details.interfaces';
+
 export type HLOrderStatus =
   | 'open'
   | 'filled'
@@ -32,18 +34,18 @@ export type HLOrderStatus =
 export interface HLOrderStatusDetails {
   coin: string;
   side: 'A' | 'B';
-  limitPx: string;
-  sz: string;
+  limitPx: DecimalString;
+  sz: DecimalString;
   oid: number;
   timestamp: number;
   triggerCondition: string;
   isTrigger: boolean;
-  triggerPx: string;
+  triggerPx: DecimalString;
   children: unknown[];
   isPositionTpsl: boolean;
   reduceOnly: boolean;
   orderType: string;
-  origSz: string;
+  origSz: DecimalString;
   tif: string;
   cloid: string | null;
 }
