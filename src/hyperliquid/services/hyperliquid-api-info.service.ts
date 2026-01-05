@@ -12,6 +12,7 @@ import {
   HLPerpAssetCtx,
   HLOpenOrdersResponse,
   HLFrontendOpenOrdersResponse,
+  HLUserFillsResponse,
 } from '../interfaces';
 import { HyperliquidConfigService } from '../config/hyperliquid-config.service';
 
@@ -168,6 +169,58 @@ export class HyperliquidApiInfoService {
         type: 'frontendOpenOrders',
         user: this.config.accountAddress.toLowerCase(),
         dex,
+      },
+      isTestnet,
+    );
+  }
+
+  /**
+   * Retrieve the user's most recent fills.
+   *
+   * Returns up to 2000 of the most recent fills (spot and perp).
+   * Intended for analytics, audit logs, and execution history.
+   *
+   * @param aggregateByTime Whether to aggregate partial fills by block/time.
+   * @param isTestnet Whether to use the Hyperliquid testnet.
+   */
+  async getUserFills(
+    aggregateByTime: boolean = false,
+    isTestnet: boolean = false,
+  ): Promise<HLUserFillsResponse> {
+    return this.executeInfo<HLUserFillsResponse>(
+      {
+        type: 'userFills',
+        user: this.config.accountAddress.toLowerCase(),
+        aggregateByTime,
+      },
+      isTestnet,
+    );
+  }
+
+  /**
+   * Retrieve the user's fills within a given time range.
+   *
+   * Returns up to 2000 fills per request.
+   * Only the 10,000 most recent fills are accessible.
+   *
+   * @param startTime Start timestamp (ms), inclusive.
+   * @param endTime End timestamp (ms), inclusive. Defaults to now.
+   * @param aggregateByTime Whether to aggregate partial fills by block/time.
+   * @param isTestnet Whether to use the Hyperliquid testnet.
+   */
+  async getUserFillsByTime(
+    startTime: number,
+    endTime?: number,
+    aggregateByTime: boolean = false,
+    isTestnet: boolean = false,
+  ): Promise<HLUserFillsResponse> {
+    return this.executeInfo<HLUserFillsResponse>(
+      {
+        type: 'userFillsByTime',
+        user: this.config.accountAddress.toLowerCase(),
+        startTime,
+        endTime,
+        aggregateByTime,
       },
       isTestnet,
     );
