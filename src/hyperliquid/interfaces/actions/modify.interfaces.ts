@@ -1,16 +1,16 @@
-import { HLOrderDetails } from '../orders/order-details.interfaces';
+import { HLApiOrder } from '../orders';
 
 export interface HLModifyAction {
   type: 'modify';
   oid: number | string;
-  order: HLOrderDetails;
+  order: HLApiOrder;
 }
 
 export interface HLBatchModifyAction {
   type: 'batchModify';
   modifies: Array<{
     oid: number | string;
-    order: HLOrderDetails;
+    order: HLApiOrder;
   }>;
 }
 

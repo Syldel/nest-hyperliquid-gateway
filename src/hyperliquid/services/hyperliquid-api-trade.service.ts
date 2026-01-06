@@ -255,10 +255,11 @@ export class HyperliquidApiTradeService {
     order: HLOrderDetails,
     isTestnet: boolean = false,
   ): Promise<HLSuccessResponse> {
+    const apiOrder: HLApiOrder = this.convertToApiOrder(order);
     const action: HLModifyAction = {
       type: 'modify',
       oid,
-      order,
+      order: apiOrder,
     };
 
     return this.executeWithNonce<HLModifyAction, HLSuccessResponse>(
@@ -275,9 +276,13 @@ export class HyperliquidApiTradeService {
     modifies: Array<{ oid: number | string; order: HLOrderDetails }>,
     isTestnet: boolean = false,
   ): Promise<HLSuccessResponse> {
+    const apiModifies = modifies.map((m) => {
+      // m.order.cloid = this.generateCloid();
+      return { oid: m.oid, order: this.convertToApiOrder(m.order) };
+    });
     const action: HLBatchModifyAction = {
       type: 'batchModify',
-      modifies,
+      modifies: apiModifies,
     };
 
     return this.executeWithNonce<HLBatchModifyAction, HLSuccessResponse>(

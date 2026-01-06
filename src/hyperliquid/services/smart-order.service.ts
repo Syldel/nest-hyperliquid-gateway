@@ -343,6 +343,13 @@ export class SmartOrderService {
     return response;
   }
 
+  /**
+   * Transforme les paramètres d'un ProtectiveOrder en HLOrderDetails
+   * pour Hyperliquid.
+   *
+   * Cette méthode est utilisée pour créer un ordre **protective** (Take Profit ou Stop Loss)
+   * à partir des paramètres fournis, avec `reduceOnly` forcé à true.
+   */
   public toHLOrderDetails(params: ProtectiveOrderParams): HLOrderDetails {
     return {
       assetName: params.assetName,

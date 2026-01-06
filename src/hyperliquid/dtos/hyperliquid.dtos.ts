@@ -8,13 +8,14 @@ import {
   IsIn,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import type { HLOrderDetails } from '../interfaces/orders/order-details.interfaces';
+
 import type { HLOrderGrouping } from '../interfaces/actions/order.interfaces';
+import { HLOrderDetailsDto } from './hyperliquid-order-details.dtos';
 
 export class PlaceOrderDto {
   @ValidateNested()
-  @Type(() => Object)
-  order: HLOrderDetails;
+  @Type(() => HLOrderDetailsDto)
+  order: HLOrderDetailsDto;
 
   @IsOptional()
   @IsIn(['na', 'normalTpsl', 'positionTpsl'])
