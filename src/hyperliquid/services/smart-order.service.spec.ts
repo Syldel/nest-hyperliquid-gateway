@@ -621,5 +621,93 @@ describe('SmartOrderService', () => {
       expect(result.sl.created).toContain(201);
       expect(result.sl.cancelled).toHaveLength(0);
     });
+
+    it('should update 2 orders, cancel 1 TP and add 1 SL when short', async () => {
+      const assetName = 'BTC';
+      const isBuy = false;
+
+      const existing = [
+        makeOrderFromSpec('101_0.5_9000_sl', assetName),
+        makeOrderFromSpec('102_0.3_8000_tp', assetName),
+        makeOrderFromSpec('103_0.2_7500_tp', assetName),
+      ];
+
+      const desired = {
+        assetName,
+        isBuy,
+        tp: [{ kind: 'tp', price: '8200', sz: '0.6' }],
+        sl: [
+          { kind: 'sl', price: '9100', sz: '0.25' },
+          { kind: 'sl', price: '9200', sz: '0.35' },
+        ],
+      };
+
+      getFrontendOpenOrdersSpy.mockResolvedValue(existing);
+
+      placeOrderSpy.mockResolvedValue({
+        response: {
+          data: {
+            statuses: [{ resting: { oid: 201 } }],
+          },
+        },
+      });
+
+      getAssetId.mockReturnValue(7);
+
+      const result = await service.placeBatchProtectiveOrders(desired, false);
+
+      expect(getFrontendOpenOrdersSpy).toHaveBeenCalled();
+
+      expect(batchModifyOrdersSpy).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            oid: 102,
+            order: expect.objectContaining({
+              limitPx: '8200',
+              sz: '0.6',
+            }) as unknown,
+          }),
+          expect.objectContaining({
+            oid: 101,
+            order: expect.objectContaining({
+              limitPx: '9100',
+              sz: '0.25',
+            }) as unknown,
+          }),
+        ]),
+        false,
+      );
+
+      expect(cancelOrderSpy).toHaveBeenCalledWith(
+        [{ oid: 103, asset: 7 }],
+        false,
+      );
+
+      expect(placeOrderSpy).toHaveBeenCalledWith({
+        isTestnet: false,
+        order: {
+          assetName: 'BTC',
+          isBuy: false,
+          limitPx: '9200',
+          orderType: {
+            trigger: {
+              isMarket: true,
+              tpsl: 'sl',
+              triggerPx: '9200',
+            },
+          },
+          reduceOnly: true,
+          sz: '0.35',
+        },
+      });
+
+      expect(result.tp.updated).toEqual([102]);
+      expect(result.tp.cancelled).toEqual([103]);
+      expect(result.tp.created).toHaveLength(0);
+
+      expect(result.sl.updated).toEqual([101]);
+      expect(result.sl.created).toEqual([201]);
+      expect(result.sl.cancelled).toHaveLength(0);
+    });
   });
 });
