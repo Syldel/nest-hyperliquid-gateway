@@ -1,11 +1,14 @@
 import { DecimalString } from './order-details.interfaces';
 
+// Info : HLOid est l’ID d’un ordre, pas d’un fill ou d’une position
+export type HLOid = number | `0x${string}`;
+
 /* ****************************** Open Orders (simple) ****************************** */
 
 export interface HLOpenOrder {
   coin: string;
   limitPx: DecimalString;
-  oid: number;
+  oid: HLOid;
   side: 'A' | 'B'; // A = Ask (sell), B = Bid (buy)
   sz: DecimalString;
   timestamp: number;

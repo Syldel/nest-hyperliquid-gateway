@@ -6,12 +6,18 @@ import {
 } from '@nestjs/common';
 
 import {
+  BatchProtectiveOrders,
   DecimalString,
+  ExistingProtectiveOrder,
+  HLModifyInput,
+  HLOid,
   HLOrderDetails,
   HLOrderStatusData,
   HLOrderStatusResponse,
   HLPlaceOrderResponse,
+  HLProtectiveKind,
   InstantOrderParams,
+  NormalizedProtectiveOrder,
   ProtectiveOrderParams,
   WaitOrderStatusOptions,
 } from '../interfaces';
@@ -19,6 +25,7 @@ import { HyperliquidApiInfoService } from './hyperliquid-api-info.service';
 import { HyperliquidApiTradeService } from './hyperliquid-api-trade.service';
 import { DecimalUtilsService } from '../utils/decimal-utils.service';
 import { PriceMathService } from './price-math.service';
+import { AssetRegistryService } from './asset-registry.service';
 
 @Injectable()
 export class SmartOrderService {
@@ -29,6 +36,7 @@ export class SmartOrderService {
     private readonly tradeService: HyperliquidApiTradeService,
     private readonly decimalUtils: DecimalUtilsService,
     private readonly priceMath: PriceMathService,
+    private readonly assetRegistry: AssetRegistryService,
   ) {}
 
   async instantOrder(params: InstantOrderParams) {
@@ -255,7 +263,7 @@ export class SmartOrderService {
   async waitForOrderFinalStatus(
     infoService: {
       getOrderStatus: (
-        oid: number | `0x${string}`,
+        oid: HLOid,
         isTestnet?: boolean,
       ) => Promise<HLOrderStatusResponse>;
     },
@@ -365,5 +373,212 @@ export class SmartOrderService {
         },
       },
     };
+  }
+
+  private sortProtectiveOrders<T extends { price: string }>(
+    orders: readonly T[],
+    kind: HLProtectiveKind,
+    isBuy: boolean,
+  ): T[] {
+    return [...orders].sort((a, b) => {
+      const pa = Number(a.price);
+      const pb = Number(b.price);
+
+      if (kind === 'tp') {
+        return isBuy ? pa - pb : pb - pa;
+      }
+
+      return isBuy ? pb - pa : pa - pb;
+    });
+  }
+
+  private diffProtectiveOrders(
+    assetName: string,
+    isBuy: boolean,
+    kind: HLProtectiveKind,
+    existing: ExistingProtectiveOrder[],
+    desired: NormalizedProtectiveOrder[],
+  ) {
+    const modifies: HLModifyInput[] = [];
+    const cancels: HLOid[] = [];
+    const creates: NormalizedProtectiveOrder[] = [];
+
+    const sortedExisting = this.sortProtectiveOrders(existing, kind, isBuy);
+    const sortedDesired = this.sortProtectiveOrders(desired, kind, isBuy);
+
+    const updateCount = Math.min(sortedExisting.length, sortedDesired.length);
+
+    // 1️⃣ UPDATE → les plus proches
+    for (let i = 0; i < updateCount; i++) {
+      const cur = sortedExisting[i];
+      const next = sortedDesired[i];
+
+      modifies.push({
+        oid: cur.oid,
+        order: this.toHLOrderDetails({
+          assetName,
+          isBuy,
+          sz: next.sz,
+          price: next.price,
+          isMarket: next.isMarket,
+          kind,
+        }),
+      });
+    }
+
+    // 2️⃣ CANCEL → existants trop éloignés
+    for (let i = updateCount; i < sortedExisting.length; i++) {
+      cancels.push(sortedExisting[i].oid);
+    }
+
+    // 3️⃣ CREATE → souhaités manquants (les plus éloignés)
+    for (let i = updateCount; i < sortedDesired.length; i++) {
+      creates.push(sortedDesired[i]);
+    }
+
+    return { modifies, cancels, creates };
+  }
+
+  /**
+   * Place / update / cancel TP & SL orders so that on-chain state
+   * matches the desired BatchProtectiveOrders input.
+   */
+  async placeBatchProtectiveOrders(
+    params: BatchProtectiveOrders,
+    isTestnet = false,
+  ) {
+    const { assetName, isBuy } = params;
+
+    const assetId = this.assetRegistry.getAssetId(assetName);
+    if (assetId === undefined) {
+      throw new Error(`Unknown asset: ${assetName}`);
+    }
+
+    // injecte le kind pour TP et SL
+    const pTPs: NormalizedProtectiveOrder[] = (params.tp ?? []).map((item) => ({
+      ...item,
+      kind: 'tp' as const,
+    }));
+
+    const pSLs: NormalizedProtectiveOrder[] = (params.sl ?? []).map((item) => ({
+      ...item,
+      kind: 'sl' as const,
+    }));
+
+    const result: {
+      tp: { cancelled: HLOid[]; created: HLOid[]; updated: HLOid[] };
+      sl: { cancelled: HLOid[]; created: HLOid[]; updated: HLOid[] };
+    } = {
+      tp: { cancelled: [], created: [], updated: [] },
+      sl: { cancelled: [], created: [], updated: [] },
+    };
+
+    // 1️⃣ Fetch existing protective orders
+    const openOrders = await this.infoService.getFrontendOpenOrders(
+      '',
+      isTestnet,
+    );
+
+    function mapKind(condition?: string): HLProtectiveKind {
+      if (condition?.toLowerCase().includes('profit')) return 'tp';
+      return 'sl';
+    }
+
+    const existing: ExistingProtectiveOrder[] = openOrders
+      .filter((o) => o.coin === assetName)
+      .filter((o) => o.reduceOnly && o.isTrigger && o.isPositionTpsl)
+      .map((o) => ({
+        oid: o.oid,
+        kind: mapKind(o.triggerCondition),
+        price: o.triggerPx,
+        sz: o.sz,
+        isMarket: o.orderType === 'Market',
+      }))
+      .sort((a, b) => Number(a.price) - Number(b.price));
+
+    const existingTp = existing.filter((o) => o.kind === 'tp');
+    const existingSl = existing.filter((o) => o.kind === 'sl');
+
+    // 2️⃣ Desired state
+    const desiredTp = pTPs ?? [];
+    const desiredSl = pSLs ?? [];
+
+    // 3️⃣ Diff
+    const tpDiff = this.diffProtectiveOrders(
+      assetName,
+      isBuy,
+      'tp',
+      existingTp,
+      desiredTp,
+    );
+
+    const slDiff = this.diffProtectiveOrders(
+      assetName,
+      isBuy,
+      'sl',
+      existingSl,
+      desiredSl,
+    );
+
+    // 4️⃣ batchModify (priority)
+    const modifies = [...tpDiff.modifies, ...slDiff.modifies];
+
+    if (modifies.length > 0) {
+      await this.tradeService.batchModifyOrders(modifies, isTestnet);
+      result.tp.updated.push(...tpDiff.modifies.map((m) => m.oid));
+      result.sl.updated.push(...slDiff.modifies.map((m) => m.oid));
+    }
+
+    // 5️⃣ Cancels
+    const cancels = [...tpDiff.cancels, ...slDiff.cancels];
+
+    if (cancels.length > 0) {
+      await this.tradeService.cancelOrder(
+        cancels.map((oid) => ({
+          oid,
+          asset: assetId,
+        })),
+        isTestnet,
+      );
+      result.tp.cancelled.push(...tpDiff.cancels);
+      result.sl.cancelled.push(...slDiff.cancels);
+    }
+
+    // 6️⃣ Creates
+    for (const tp of tpDiff.creates) {
+      const res = await this.tradeService.placeOrder({
+        order: this.toHLOrderDetails({
+          assetName,
+          isBuy,
+          sz: tp.sz,
+          price: tp.price,
+          isMarket: tp.isMarket,
+          kind: 'tp',
+        }),
+        isTestnet,
+      });
+      const oStatus = res.response.data.statuses[0];
+      const oid = oStatus.resting?.oid || oStatus.filled?.oid;
+      result.tp.created.push(oid!);
+    }
+
+    for (const sl of slDiff.creates) {
+      const res = await this.tradeService.placeOrder({
+        order: this.toHLOrderDetails({
+          assetName,
+          isBuy,
+          sz: sl.sz,
+          price: sl.price,
+          isMarket: sl.isMarket,
+          kind: 'sl',
+        }),
+        isTestnet,
+      });
+      const oStatus = res.response.data.statuses[0];
+      const oid = oStatus.resting?.oid || oStatus.filled?.oid;
+      result.sl.created.push(oid!);
+    }
+
+    return result;
   }
 }

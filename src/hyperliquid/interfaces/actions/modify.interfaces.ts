@@ -1,15 +1,15 @@
-import { HLApiOrder } from '../orders';
+import { HLApiOrder, HLOid } from '../orders';
 
 export interface HLModifyAction {
   type: 'modify';
-  oid: number | string;
+  oid: HLOid;
   order: HLApiOrder;
 }
 
 export interface HLBatchModifyAction {
   type: 'batchModify';
   modifies: Array<{
-    oid: number | string;
+    oid: HLOid;
     order: HLApiOrder;
   }>;
 }

@@ -27,6 +27,7 @@ import {
   HLOrderGrouping,
   HLOrderBuilder,
   HLPlaceOrderResponse,
+  HLOid,
 } from '../interfaces';
 import { HyperliquidConfigService } from '../config/hyperliquid-config.service';
 import { NonceManagerService } from '../../crypto/services/nonce-manager.service';
@@ -251,7 +252,7 @@ export class HyperliquidApiTradeService {
    * Modifie un ordre existant.
    */
   async modifyOrder(
-    oid: number | string,
+    oid: HLOid,
     order: HLOrderDetails,
     isTestnet: boolean = false,
   ): Promise<HLSuccessResponse> {
@@ -273,7 +274,7 @@ export class HyperliquidApiTradeService {
    * Modifie plusieurs ordres en une seule requête.
    */
   async batchModifyOrders(
-    modifies: Array<{ oid: number | string; order: HLOrderDetails }>,
+    modifies: Array<{ oid: HLOid; order: HLOrderDetails }>,
     isTestnet: boolean = false,
   ): Promise<HLSuccessResponse> {
     const apiModifies = modifies.map((m) => {
@@ -302,13 +303,16 @@ export class HyperliquidApiTradeService {
   async cancelOrder(
     cancels: Array<{
       asset: number;
-      oid: number;
+      oid: HLOid;
     }>,
     isTestnet: boolean = false,
   ): Promise<HLCancelResponse> {
     const action: HLCancelAction = {
       type: 'cancel',
-      cancels: cancels.map((c) => ({ a: c.asset, o: c.oid })),
+      cancels: cancels.map((c) => ({
+        a: c.asset,
+        o: typeof c.oid === 'string' ? parseInt(c.oid, 16) : c.oid,
+      })),
     };
 
     return this.executeWithNonce<HLCancelAction, HLCancelResponse>(

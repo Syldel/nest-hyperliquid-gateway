@@ -1,3 +1,4 @@
+import { HLOid } from './open-order.interfaces';
 import { DecimalString } from './order-details.interfaces';
 
 export type HLOrderStatus =
@@ -36,7 +37,7 @@ export interface HLOrderStatusDetails {
   side: 'A' | 'B';
   limitPx: DecimalString;
   sz: DecimalString;
-  oid: number;
+  oid: HLOid;
   timestamp: number;
   triggerCondition: string;
   isTrigger: boolean;
@@ -44,7 +45,7 @@ export interface HLOrderStatusDetails {
   children: unknown[];
   isPositionTpsl: boolean;
   reduceOnly: boolean;
-  orderType: string;
+  orderType: string; // "Market"
   origSz: DecimalString;
   tif: string;
   cloid: string | null;
@@ -64,5 +65,5 @@ export interface HLOrderStatusResponse {
 export interface HLOrderStatusRequest {
   type: 'orderStatus';
   user: `0x${string}`;
-  oid: number | `0x${string}`;
+  oid: HLOid;
 }

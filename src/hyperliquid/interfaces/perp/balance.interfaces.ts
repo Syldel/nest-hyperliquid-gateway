@@ -24,7 +24,7 @@ export interface HLPerpPositionDetail {
   maxLeverage: number;
   positionValue: DecimalString;
   returnOnEquity: DecimalString;
-  szi: DecimalString;
+  szi: DecimalString; // szi > 0 → Long / szi < 0 → Short
   unrealizedPnl: DecimalString;
 }
 

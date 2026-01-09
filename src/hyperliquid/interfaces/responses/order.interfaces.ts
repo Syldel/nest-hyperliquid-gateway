@@ -1,6 +1,8 @@
+import { HLOid } from '../orders';
+
 export interface HLPlaceOrderStatus {
-  resting?: { oid: number };
-  filled?: { oid: number; totalSz: string; avgPx: string };
+  resting?: { oid: HLOid };
+  filled?: { oid: HLOid; totalSz: string; avgPx: string };
   error?: string;
 }
 

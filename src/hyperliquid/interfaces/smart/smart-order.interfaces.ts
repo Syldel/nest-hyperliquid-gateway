@@ -1,4 +1,4 @@
-import { DecimalString } from '../orders';
+import { DecimalString, HLOid } from '../orders';
 
 export type HLOrderSize =
   | { type: 'base'; sz: DecimalString }
@@ -15,7 +15,7 @@ export interface InstantOrderParams {
 }
 
 export interface WaitOrderStatusOptions {
-  oid: number | `0x${string}`;
+  oid: HLOid;
   timeoutMs?: number;
   pollIntervalMs?: number;
   isTestnet?: boolean;

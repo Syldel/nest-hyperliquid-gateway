@@ -13,6 +13,7 @@ import {
   HLOpenOrdersResponse,
   HLFrontendOpenOrdersResponse,
   HLUserFillsResponse,
+  HLOid,
 } from '../interfaces';
 import { HyperliquidConfigService } from '../config/hyperliquid-config.service';
 
@@ -108,7 +109,7 @@ export class HyperliquidApiInfoService {
    * ```
    */
   async getOrderStatus(
-    oid: number | `0x${string}`,
+    oid: HLOid,
     isTestnet: boolean = false,
   ): Promise<HLOrderStatusResponse> {
     return this.executeInfo<HLOrderStatusResponse>(
