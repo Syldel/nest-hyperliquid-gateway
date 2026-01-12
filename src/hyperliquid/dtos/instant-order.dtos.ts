@@ -43,6 +43,11 @@ export class InstantOrderDto {
   @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
+  reduceOnly?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
   isTestnet?: boolean;
 
   @IsOptional()

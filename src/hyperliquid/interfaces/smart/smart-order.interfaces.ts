@@ -9,6 +9,7 @@ export interface InstantOrderParams {
   assetName: string; // "BTC", "HYPE/USDC", "test:ABC", etc.
   isBuy: boolean; // Maybe change to: side: 'long' | 'short' ?
   size: HLOrderSize;
+  reduceOnly?: boolean;
   isTestnet?: boolean;
   maxRetries?: number;
   delayMs?: number;

@@ -14,6 +14,7 @@ export class InstantOrderController {
       assetName: dto.assetName,
       isBuy: dto.isBuy,
       size: this.mapOrderSize(dto.size),
+      reduceOnly: dto.reduceOnly ?? false,
       isTestnet: dto.isTestnet,
       maxRetries: dto.maxRetries,
       delayMs: dto.delayMs,

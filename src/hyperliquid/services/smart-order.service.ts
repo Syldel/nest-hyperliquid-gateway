@@ -44,6 +44,7 @@ export class SmartOrderService {
       assetName,
       isBuy,
       size,
+      reduceOnly = false,
       isTestnet = false,
       maxRetries = 6,
       delayMs = 4000,
@@ -96,7 +97,7 @@ export class SmartOrderService {
         isBuy,
         sz,
         limitPx: price.toString(),
-        reduceOnly: false,
+        reduceOnly,
         orderType: {
           limit: { tif: 'Alo' },
         },
