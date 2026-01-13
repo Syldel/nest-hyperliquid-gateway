@@ -9,6 +9,7 @@ import {
   BatchProtectiveOrders,
   DecimalString,
   ExistingProtectiveOrder,
+  HLFrontendOpenOrder,
   HLModifyInput,
   HLOid,
   HLOrderDetails,
@@ -47,7 +48,7 @@ export class SmartOrderService {
       reduceOnly = false,
       isTestnet = false,
       maxRetries = 6,
-      delayMs = 4000,
+      delayMs = 7500,
     } = params;
 
     let attempt = 0;
@@ -277,8 +278,8 @@ export class SmartOrderService {
     const {
       oid,
       isTestnet,
-      timeoutMs = 30_000,
-      pollIntervalMs = 5_000,
+      timeoutMs = 45_000,
+      pollIntervalMs = 7_500,
     } = options;
 
     const start = Date.now();
@@ -480,22 +481,32 @@ export class SmartOrderService {
       isTestnet,
     );
 
-    function mapKind(condition?: string): HLProtectiveKind {
-      if (condition?.toLowerCase().includes('profit')) return 'tp';
+    function mapKind(orderType?: string): HLProtectiveKind {
+      const type = orderType?.toLowerCase() || '';
+      if (type.includes('take profit')) return 'tp';
+      if (type.includes('stop')) return 'sl';
       return 'sl';
     }
 
     const existing: ExistingProtectiveOrder[] = openOrders
       .filter((o) => o.coin === assetName)
-      .filter((o) => o.reduceOnly && o.isTrigger && o.isPositionTpsl)
+      .filter((o) => o.reduceOnly && o.isTrigger)
       .map((o) => ({
         oid: o.oid,
-        kind: mapKind(o.triggerCondition),
+        kind: mapKind(o.orderType),
         price: o.triggerPx,
         sz: o.sz,
-        isMarket: o.orderType === 'Market',
+        isMarket: o.orderType.toLowerCase().includes('market'),
       }))
       .sort((a, b) => Number(a.price) - Number(b.price));
+
+    let openOrder: HLFrontendOpenOrder | undefined;
+    existing.forEach((o) => {
+      openOrder = openOrders.find((r) => r.oid === o.oid);
+      this.logger.log(
+        `Open Order ${assetName}: ${o.oid} [${o.kind}] ${openOrder ? (openOrder.side === 'B' ? 'BUY' : 'SELL') : '?'} ${o.sz} @ ${o.price}`,
+      );
+    });
 
     const existingTp = existing.filter((o) => o.kind === 'tp');
     const existingSl = existing.filter((o) => o.kind === 'sl');
@@ -525,24 +536,67 @@ export class SmartOrderService {
     const modifies = [...tpDiff.modifies, ...slDiff.modifies];
 
     if (modifies.length > 0) {
-      await this.tradeService.batchModifyOrders(modifies, isTestnet);
-      result.tp.updated.push(...tpDiff.modifies.map((m) => m.oid));
-      result.sl.updated.push(...slDiff.modifies.map((m) => m.oid));
+      const bathModifyRes = await this.tradeService.batchModifyOrders(
+        modifies,
+        isTestnet,
+      );
+
+      if (bathModifyRes.status === 'ok') {
+        const bmStatus = bathModifyRes.response.data.statuses;
+
+        modifies.forEach((m, index) => {
+          const status = bmStatus[index];
+          if (!status) return;
+
+          const newOid = status.resting?.oid || status.filled?.oid;
+          if (newOid) {
+            const isTp = tpDiff.modifies.some((tpM) => tpM.oid === m.oid);
+            if (isTp) {
+              result.tp.updated.push(newOid);
+            } else {
+              result.sl.updated.push(newOid);
+            }
+          } else if (status.error) {
+            this.logger.error(
+              `Failed to modify order ${m.oid}: ${status.error}`,
+            );
+          }
+        });
+      }
     }
 
     // 5️⃣ Cancels
     const cancels = [...tpDiff.cancels, ...slDiff.cancels];
 
     if (cancels.length > 0) {
-      await this.tradeService.cancelOrder(
+      const cancelRes = await this.tradeService.cancelOrder(
         cancels.map((oid) => ({
-          oid,
           asset: assetId,
+          oid,
         })),
         isTestnet,
       );
-      result.tp.cancelled.push(...tpDiff.cancels);
-      result.sl.cancelled.push(...slDiff.cancels);
+
+      if (cancelRes.status === 'ok') {
+        const statuses = cancelRes.response.data.statuses;
+        cancels.forEach((oid, index) => {
+          const status = statuses[index];
+          if (status === 'success') {
+            if (tpDiff.cancels.includes(oid)) {
+              result.tp.cancelled.push(oid);
+            } else {
+              result.sl.cancelled.push(oid);
+            }
+          } else {
+            this.logger.warn(
+              `Failed to cancel order ${oid}: ${JSON.stringify(status)}`,
+            );
+          }
+        });
+      } else {
+        const statusMsg = cancelRes ? String(cancelRes.status) : 'No response';
+        this.logger.error(`Cancel batch request failed: ${statusMsg}`);
+      }
     }
 
     // 6️⃣ Creates
@@ -559,8 +613,12 @@ export class SmartOrderService {
         isTestnet,
       });
       const oStatus = res.response.data.statuses[0];
-      const oid = oStatus.resting?.oid || oStatus.filled?.oid;
-      result.tp.created.push(oid!);
+      const oid = oStatus?.resting?.oid || oStatus?.filled?.oid;
+      if (oid) {
+        result.tp.created.push(oid);
+      } else {
+        this.logger.error(`Order creation failed: ${JSON.stringify(oStatus)}`);
+      }
     }
 
     for (const sl of slDiff.creates) {
@@ -576,8 +634,12 @@ export class SmartOrderService {
         isTestnet,
       });
       const oStatus = res.response.data.statuses[0];
-      const oid = oStatus.resting?.oid || oStatus.filled?.oid;
-      result.sl.created.push(oid!);
+      const oid = oStatus?.resting?.oid || oStatus?.filled?.oid;
+      if (oid) {
+        result.sl.created.push(oid);
+      } else {
+        this.logger.error(`Order creation failed: ${JSON.stringify(oStatus)}`);
+      }
     }
 
     return result;

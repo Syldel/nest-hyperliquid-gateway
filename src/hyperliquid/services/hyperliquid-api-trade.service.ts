@@ -4,7 +4,7 @@ import {
   HLOrderDetails,
   HLParams,
   HLSuccessResponse,
-  HLCancelResponse,
+  HLCancelOrderResponse,
   HLErrorResponse,
   HLTwapOrderAction,
   HLTwapCancelAction,
@@ -255,7 +255,7 @@ export class HyperliquidApiTradeService {
     oid: HLOid,
     order: HLOrderDetails,
     isTestnet: boolean = false,
-  ): Promise<HLSuccessResponse> {
+  ): Promise<HLSuccessResponse<HLPlaceOrderResponse>> {
     const apiOrder: HLApiOrder = this.convertToApiOrder(order);
     const action: HLModifyAction = {
       type: 'modify',
@@ -263,11 +263,10 @@ export class HyperliquidApiTradeService {
       order: apiOrder,
     };
 
-    return this.executeWithNonce<HLModifyAction, HLSuccessResponse>(
-      'exchange',
-      action,
-      isTestnet,
-    );
+    return this.executeWithNonce<
+      HLModifyAction,
+      HLSuccessResponse<HLPlaceOrderResponse>
+    >('exchange', action, isTestnet);
   }
 
   /**
@@ -276,7 +275,7 @@ export class HyperliquidApiTradeService {
   async batchModifyOrders(
     modifies: Array<{ oid: HLOid; order: HLOrderDetails }>,
     isTestnet: boolean = false,
-  ): Promise<HLSuccessResponse> {
+  ): Promise<HLSuccessResponse<HLPlaceOrderResponse>> {
     const apiModifies = modifies.map((m) => {
       // m.order.cloid = this.generateCloid();
       return { oid: m.oid, order: this.convertToApiOrder(m.order) };
@@ -286,11 +285,10 @@ export class HyperliquidApiTradeService {
       modifies: apiModifies,
     };
 
-    return this.executeWithNonce<HLBatchModifyAction, HLSuccessResponse>(
-      'exchange',
-      action,
-      isTestnet,
-    );
+    return this.executeWithNonce<
+      HLBatchModifyAction,
+      HLSuccessResponse<HLPlaceOrderResponse>
+    >('exchange', action, isTestnet);
   }
 
   // =============================================
@@ -306,7 +304,7 @@ export class HyperliquidApiTradeService {
       oid: HLOid;
     }>,
     isTestnet: boolean = false,
-  ): Promise<HLCancelResponse> {
+  ): Promise<HLSuccessResponse<HLCancelOrderResponse>> {
     const action: HLCancelAction = {
       type: 'cancel',
       cancels: cancels.map((c) => ({
@@ -315,11 +313,10 @@ export class HyperliquidApiTradeService {
       })),
     };
 
-    return this.executeWithNonce<HLCancelAction, HLCancelResponse>(
-      'exchange',
-      action,
-      isTestnet,
-    );
+    return this.executeWithNonce<
+      HLCancelAction,
+      HLSuccessResponse<HLCancelOrderResponse>
+    >('exchange', action, isTestnet);
   }
 
   /**
@@ -328,17 +325,16 @@ export class HyperliquidApiTradeService {
   async cancelOrderByCloid(
     cancels: Array<{ asset: number; cloid: string }>,
     isTestnet: boolean = false,
-  ): Promise<HLSuccessResponse> {
+  ): Promise<HLSuccessResponse<HLCancelOrderResponse>> {
     const action: HLCancelByCloidAction = {
       type: 'cancelByCloid',
       cancels,
     };
 
-    return this.executeWithNonce<HLCancelByCloidAction, HLSuccessResponse>(
-      'exchange',
-      action,
-      isTestnet,
-    );
+    return this.executeWithNonce<
+      HLCancelByCloidAction,
+      HLSuccessResponse<HLCancelOrderResponse>
+    >('exchange', action, isTestnet);
   }
 
   // =============================================

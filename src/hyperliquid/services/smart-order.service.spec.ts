@@ -320,7 +320,7 @@ describe('SmartOrderService', () => {
       kind: 'tp' | 'sl';
       price: string;
       sz: string;
-      side: 'A' | 'B';
+      side: 'A' | 'B'; // 'A' = Ask (Sell), 'B' = Bid (Buy)
       isMarket?: boolean;
       timestamp?: number;
     }) {
@@ -335,24 +335,40 @@ describe('SmartOrderService', () => {
         timestamp = Date.now(),
       } = params;
 
+      const preciseOrderType =
+        kind === 'tp'
+          ? isMarket
+            ? 'Take Profit Market'
+            : 'Take Profit Limit'
+          : isMarket
+            ? 'Stop Market'
+            : 'Stop Limit';
+
+      const conditionText =
+        kind === 'tp'
+          ? `Price ${side === 'B' ? 'below' : 'above'} ${price}`
+          : `Price ${side === 'B' ? 'above' : 'below'} ${price}`;
+
       return {
         coin: assetName,
         oid,
         sz,
-        limitPx: isMarket ? '0' : price,
+        limitPx: price,
         side,
         timestamp,
 
         // flags Hyperliquid
         isTrigger: true,
         reduceOnly: true,
-        isPositionTpsl: true,
+        isPositionTpsl: false,
 
         // frontend-only
-        orderType: isMarket ? 'Market' : 'Limit',
+        orderType: preciseOrderType,
         triggerPx: price,
-        triggerCondition: kind === 'tp' ? 'Profit target' : 'Stop loss',
+        triggerCondition: conditionText,
         origSz: sz,
+        children: [],
+        cloid: null,
       };
     }
 
@@ -392,7 +408,15 @@ describe('SmartOrderService', () => {
     beforeEach(() => {
       getFrontendOpenOrdersSpy.mockResolvedValue([]);
       batchModifyOrdersSpy.mockResolvedValue({});
-      cancelOrderSpy.mockResolvedValue({});
+      cancelOrderSpy.mockResolvedValue({
+        status: 'ok',
+        response: {
+          type: 'cancel',
+          data: {
+            statuses: ['success'],
+          },
+        },
+      });
       placeOrderSpy.mockResolvedValue({});
       getAssetId.mockReturnValue(0);
     });
@@ -504,6 +528,15 @@ describe('SmartOrderService', () => {
         response: { data: { statuses: [{ resting: { oid: 201 } }] } },
       });
 
+      batchModifyOrdersSpy.mockResolvedValue({
+        status: 'ok',
+        response: {
+          data: {
+            statuses: [{ resting: { oid: 1111 } }, { resting: { oid: 1222 } }],
+          },
+        },
+      });
+
       getAssetId.mockReturnValue(7);
 
       const result = await service.placeBatchProtectiveOrders(desired, false);
@@ -542,11 +575,11 @@ describe('SmartOrderService', () => {
       );
 
       // Check created / updated / cancelled
-      expect(result.tp.updated).toContain(101);
+      expect(result.tp.updated).toContain(1111); // TP 101 => TP 1111
       expect(result.tp.created).toContain(201); // new TP
       expect(result.tp.cancelled).toHaveLength(0);
 
-      expect(result.sl.updated).toContain(103);
+      expect(result.sl.updated).toContain(1222); // SL 103 => SL 1222
       expect(result.sl.created).toHaveLength(0);
       expect(result.sl.cancelled).toContain(102); // SL 102 removed
     });
@@ -573,6 +606,15 @@ describe('SmartOrderService', () => {
 
       placeOrderSpy.mockResolvedValue({
         response: { data: { statuses: [{ resting: { oid: 201 } }] } },
+      });
+
+      batchModifyOrdersSpy.mockResolvedValue({
+        status: 'ok',
+        response: {
+          data: {
+            statuses: [{ resting: { oid: 1555 } }, { resting: { oid: 1666 } }],
+          },
+        },
       });
 
       getAssetId.mockReturnValue(7);
@@ -613,17 +655,16 @@ describe('SmartOrderService', () => {
       );
 
       // Check created / updated / cancelled
-      expect(result.tp.updated).toContain(101);
+      expect(result.tp.updated).toContain(1555); // TP 101 => TP 1555
       expect(result.tp.created).toHaveLength(0);
       expect(result.tp.cancelled).toContain(104);
 
-      expect(result.sl.updated).toContain(102);
+      expect(result.sl.updated).toContain(1666); // SL 102 => SL 1666
       expect(result.sl.created).toContain(201);
       expect(result.sl.cancelled).toHaveLength(0);
     });
 
     it('should update 2 orders, cancel 1 TP and add 1 SL when short', async () => {
-      const assetName = 'BTC';
       const isBuy = false;
 
       const existing = [
@@ -652,6 +693,15 @@ describe('SmartOrderService', () => {
         },
       });
 
+      batchModifyOrdersSpy.mockResolvedValue({
+        status: 'ok',
+        response: {
+          data: {
+            statuses: [{ resting: { oid: 1777 } }, { resting: { oid: 1888 } }],
+          },
+        },
+      });
+
       getAssetId.mockReturnValue(7);
 
       const result = await service.placeBatchProtectiveOrders(desired, false);
@@ -666,14 +716,14 @@ describe('SmartOrderService', () => {
               limitPx: '8200',
               sz: '0.6',
             }) as unknown,
-          }),
+          }), // TP
           expect.objectContaining({
             oid: 101,
             order: expect.objectContaining({
               limitPx: '9100',
               sz: '0.25',
             }) as unknown,
-          }),
+          }), // SL
         ]),
         false,
       );
@@ -701,11 +751,11 @@ describe('SmartOrderService', () => {
         },
       });
 
-      expect(result.tp.updated).toEqual([102]);
+      expect(result.tp.updated).toEqual([1777]); // TP 102 => TP 1777
       expect(result.tp.cancelled).toEqual([103]);
       expect(result.tp.created).toHaveLength(0);
 
-      expect(result.sl.updated).toEqual([101]);
+      expect(result.sl.updated).toEqual([1888]); // SL 101 => SL 1888
       expect(result.sl.created).toEqual([201]);
       expect(result.sl.cancelled).toHaveLength(0);
     });
