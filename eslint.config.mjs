@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint';
 
 export default [
   {
-    ignores: ['dist', 'node_modules', 'eslint.config.mjs'],
+    ignores: ['dist', 'node_modules', 'eslint.config.mjs', '.idea'],
   },
 
   // Recommandations de base ESLint
