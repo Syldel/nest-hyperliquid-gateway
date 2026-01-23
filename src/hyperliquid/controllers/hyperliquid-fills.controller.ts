@@ -1,6 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 
-import { HLUserFillsResponse } from '../interfaces';
+import { HLUserFillsResponse } from '@syldel/hl-shared-types';
 import { HyperliquidApiInfoService } from '../services/hyperliquid-api-info.service';
 
 @Controller('hyperliquid/fills')

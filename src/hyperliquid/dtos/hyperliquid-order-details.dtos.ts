@@ -8,7 +8,7 @@ import {
   ValidatorConstraintInterface,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import type { DecimalString } from '../interfaces';
+import type { DecimalString } from '@syldel/hl-shared-types';
 
 @ValidatorConstraint({ name: 'OrderTypeXor', async: false })
 export class OrderTypeXorValidator implements ValidatorConstraintInterface {

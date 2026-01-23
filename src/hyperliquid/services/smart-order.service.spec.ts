@@ -6,7 +6,7 @@ import {
   HLPlaceOrderResponse,
   HLOrderSize,
   HLOrderDetails,
-} from '../interfaces';
+} from '@syldel/hl-shared-types';
 import { SmartOrderService } from './smart-order.service';
 import { HyperliquidApiInfoService } from './hyperliquid-api-info.service';
 import { HyperliquidApiTradeService } from './hyperliquid-api-trade.service';

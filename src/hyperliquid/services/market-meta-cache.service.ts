@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Subject } from 'rxjs';
 import { HyperliquidApiInfoService } from './hyperliquid-api-info.service';
-import { HLPerpMeta, HLSpotMeta } from '../interfaces';
+import { HLPerpMeta, HLSpotMeta } from '@syldel/hl-shared-types';
 import { HyperliquidConfigService } from '../config/hyperliquid-config.service';
 
 interface CachedMeta<T> {

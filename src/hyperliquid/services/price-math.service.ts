@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { DecimalString } from '../interfaces';
+import { DecimalString } from '@syldel/hl-shared-types';
 
 @Injectable()
 export class PriceMathService {

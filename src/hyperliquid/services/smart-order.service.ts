@@ -20,8 +20,9 @@ import {
   InstantOrderParams,
   NormalizedProtectiveOrder,
   ProtectiveOrderParams,
+  SmartOrderResponse,
   WaitOrderStatusOptions,
-} from '../interfaces';
+} from '@syldel/hl-shared-types';
 import { HyperliquidApiInfoService } from './hyperliquid-api-info.service';
 import { HyperliquidApiTradeService } from './hyperliquid-api-trade.service';
 import { DecimalUtilsService } from '../utils/decimal-utils.service';
@@ -467,10 +468,7 @@ export class SmartOrderService {
       kind: 'sl' as const,
     }));
 
-    const result: {
-      tp: { cancelled: HLOid[]; created: HLOid[]; updated: HLOid[] };
-      sl: { cancelled: HLOid[]; created: HLOid[]; updated: HLOid[] };
-    } = {
+    const result: SmartOrderResponse = {
       tp: { cancelled: [], created: [], updated: [] },
       sl: { cancelled: [], created: [], updated: [] },
     };

@@ -6,10 +6,12 @@ import {
   ValidateNested,
   IsOptional,
   IsIn,
+  IsHexadecimal,
+  Length,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-import type { HLOrderGrouping } from '../interfaces/actions/order.interfaces';
+import type { HLOrderGrouping } from '@syldel/hl-shared-types';
 import { HLOrderDetailsDto } from './hyperliquid-order-details.dtos';
 
 export class PlaceOrderDto {
@@ -38,6 +40,29 @@ export class CancelOrderDto {
   @IsBoolean()
   @IsOptional()
   isTestnet: boolean = false;
+}
+
+export class CancelByCloidItemDto {
+  @IsNumber()
+  asset: number;
+
+  @IsString()
+  @IsHexadecimal()
+  @Length(32, 32, {
+    message: 'cloid must be a 32-character hex string (16 bytes)',
+  })
+  cloid: string;
+}
+
+export class CancelOrderByCloidDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CancelByCloidItemDto)
+  cancels: CancelByCloidItemDto[];
+
+  @IsBoolean()
+  @IsOptional()
+  isTestnet?: boolean = false;
 }
 
 export class UpdateLeverageDto {

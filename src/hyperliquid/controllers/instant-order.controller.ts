@@ -2,7 +2,7 @@ import { Body, Controller, Post } from '@nestjs/common';
 
 import { SmartOrderService } from '../services/smart-order.service';
 import { InstantOrderDto, OrderSizeDto } from '../dtos/instant-order.dtos';
-import { HLOrderSize } from '../interfaces';
+import { HLOrderSize } from '@syldel/hl-shared-types';
 
 @Controller('orders')
 export class InstantOrderController {

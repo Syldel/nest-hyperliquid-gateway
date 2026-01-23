@@ -14,7 +14,7 @@ import {
   HLFrontendOpenOrdersResponse,
   HLUserFillsResponse,
   HLOid,
-} from '../interfaces';
+} from '@syldel/hl-shared-types';
 import { HyperliquidConfigService } from '../config/hyperliquid-config.service';
 
 @Injectable()

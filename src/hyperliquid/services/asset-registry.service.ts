@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { MarketMetaCacheService } from './market-meta-cache.service';
-import { HLPerpMeta, HLSpotMeta } from '../interfaces';
+import { HLPerpMeta, HLSpotMeta } from '@syldel/hl-shared-types';
 
 @Injectable()
 export class AssetRegistryService implements OnModuleInit {

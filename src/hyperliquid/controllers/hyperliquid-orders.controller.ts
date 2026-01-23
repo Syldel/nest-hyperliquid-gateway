@@ -3,7 +3,7 @@ import { Controller, Get, Param, Query } from '@nestjs/common';
 import {
   HLOpenOrdersResponse,
   HLFrontendOpenOrdersResponse,
-} from '../interfaces';
+} from '@syldel/hl-shared-types';
 import {
   GetOpenOrdersQueryDto,
   OrderStatusQueryDto,

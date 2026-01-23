@@ -28,7 +28,7 @@ import {
   HLOrderBuilder,
   HLPlaceOrderResponse,
   HLOid,
-} from '../interfaces';
+} from '@syldel/hl-shared-types';
 import { HyperliquidConfigService } from '../config/hyperliquid-config.service';
 import { NonceManagerService } from '../../crypto/services/nonce-manager.service';
 import { ValueFormatterService } from './value-formatter.service';
@@ -179,13 +179,37 @@ export class HyperliquidApiTradeService {
 
     const formattedSize = this.formatter.formatSize(order.sz, szDecimals);
 
+    let formattedOrderType: HLOrderDetails['orderType'];
+
+    if ('limit' in order.orderType) {
+      formattedOrderType = {
+        limit: {
+          tif: order.orderType.limit.tif,
+        },
+      };
+    } else {
+      const formattedTriggerPx = this.formatter.formatPrice(
+        order.orderType.trigger.triggerPx,
+        szDecimals,
+        isPerp ? 'perp' : 'spot',
+      );
+
+      formattedOrderType = {
+        trigger: {
+          isMarket: order.orderType.trigger.isMarket,
+          triggerPx: formattedTriggerPx,
+          tpsl: order.orderType.trigger.tpsl,
+        },
+      };
+    }
+
     const apiOrder: HLApiOrder = {
       a: assetId,
       b: !!order.isBuy,
       p: formattedPrice, // order.limitPx,
       s: formattedSize, // order.sz,
       r: !!order.reduceOnly,
-      t: order.orderType,
+      t: formattedOrderType,
     };
 
     if (order.cloid) {

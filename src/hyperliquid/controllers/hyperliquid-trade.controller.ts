@@ -10,6 +10,7 @@ import {
   CancelOrderDto,
   UpdateLeverageDto,
   TransferSpotPerpDto,
+  CancelOrderByCloidDto,
 } from '../dtos/hyperliquid.dtos';
 import {
   BatchModifyOrdersDto,
@@ -17,7 +18,7 @@ import {
 } from '../dtos/hyperliquid-modify-order.dtos';
 import { HLOrderTypeDto } from '../dtos/hyperliquid-order-details.dtos';
 import { HyperliquidApiTradeService } from '../services/hyperliquid-api-trade.service';
-import { HLOrderDetails } from '../interfaces';
+import { HLOrderDetails } from '@syldel/hl-shared-types';
 
 @Controller('hyperliquid')
 @UsePipes(new ValidationPipe({ transform: true }))
@@ -53,6 +54,15 @@ export class HyperliquidTradeController {
   @Post('order/cancel')
   async cancelOrder(@Body() body: CancelOrderDto) {
     return this.tradeService.cancelOrder(body.cancels, body.isTestnet);
+  }
+
+  /**
+   * Annule un ou plusieurs ordres via leur Client Order ID (CLOID).
+   * @param body Données de l'annulation par CLOID.
+   */
+  @Post('order/cancel-by-cloid')
+  async cancelOrderByCloid(@Body() body: CancelOrderByCloidDto) {
+    return this.tradeService.cancelOrderByCloid(body.cancels, body.isTestnet);
   }
 
   /**

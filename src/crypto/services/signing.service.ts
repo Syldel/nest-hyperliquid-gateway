@@ -11,7 +11,7 @@ import {
 } from 'ethers';
 import { concatBytes } from '@noble/hashes/utils.js';
 
-import { HLSignature } from '../../hyperliquid/interfaces';
+import { HLSignature } from '@syldel/hl-shared-types';
 
 // -----------------------------------------------------------------------------
 // Constants
