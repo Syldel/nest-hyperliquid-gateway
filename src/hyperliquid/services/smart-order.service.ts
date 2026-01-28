@@ -28,6 +28,7 @@ import { HyperliquidApiTradeService } from './hyperliquid-api-trade.service';
 import { DecimalUtilsService } from '../utils/decimal-utils.service';
 import { PriceMathService } from './price-math.service';
 import { AssetRegistryService } from './asset-registry.service';
+import { ValueFormatterService } from './value-formatter.service';
 
 @Injectable()
 export class SmartOrderService {
@@ -39,6 +40,7 @@ export class SmartOrderService {
     private readonly decimalUtils: DecimalUtilsService,
     private readonly priceMath: PriceMathService,
     private readonly assetRegistry: AssetRegistryService,
+    private readonly formatter: ValueFormatterService,
   ) {}
 
   async instantOrder(params: InstantOrderParams) {
@@ -275,6 +277,9 @@ export class SmartOrderService {
     finalStatus: string;
     raw: HLOrderStatusData;
     timedOut: boolean;
+    partialFilled: boolean;
+    filledQuantity: number;
+    remainingQuantity: number;
   }> {
     const {
       oid,
@@ -285,6 +290,16 @@ export class SmartOrderService {
 
     const start = Date.now();
 
+    const parseOrder = (order: HLOrderStatusData) => {
+      const o = order;
+      const status = o?.status ?? 'unknownOid';
+      const orig = Number(o?.order?.origSz || 0);
+      const rem = Number(o?.order?.sz || 0);
+      const filled = orig - rem;
+      const partialFilled = filled > 0 && rem > 0;
+      return { o, status, orig, rem, filled, partialFilled };
+    };
+
     while (Date.now() - start < timeoutMs) {
       const status = await infoService.getOrderStatus(oid, isTestnet);
       if (!status || status.status === 'unknownOid') {
@@ -292,35 +307,66 @@ export class SmartOrderService {
         continue;
       }
 
-      const s = status.order.status;
-      this.logger.log(`Order ${oid} status: ${s}`);
+      const {
+        o,
+        status: s,
+        filled,
+        rem,
+        orig,
+        partialFilled,
+      } = parseOrder(status.order);
 
-      // État exécuté
+      this.logger.log(
+        `Order ${oid} status: ${s} (filled: ${filled} / ${orig})`,
+      );
+
       if (s === 'filled' || s === 'triggered') {
-        return { finalStatus: s, raw: status.order, timedOut: false };
+        return {
+          finalStatus: s,
+          raw: o,
+          timedOut: false,
+          partialFilled: false,
+          filledQuantity: orig,
+          remainingQuantity: 0,
+        };
       }
 
-      // État rejeté/cancelé
       if (
         s.endsWith('Canceled') ||
         s.endsWith('Rejected') ||
         s === 'canceled' ||
         s === 'rejected'
       ) {
-        return { finalStatus: s, raw: status.order, timedOut: false };
+        return {
+          finalStatus: s,
+          raw: o,
+          timedOut: false,
+          partialFilled,
+          filledQuantity: filled,
+          remainingQuantity: rem,
+        };
       }
 
       // open = toujours en book
       await this.sleep(pollIntervalMs);
     }
 
-    // timeout dépassé, retourne le dernier status (probablement open)
     const lastStatus = await infoService.getOrderStatus(oid, isTestnet);
+    const {
+      o,
+      status: s,
+      filled,
+      rem,
+      partialFilled,
+    } = parseOrder(lastStatus?.order);
 
     return {
-      finalStatus: lastStatus?.order?.status ?? 'unknownOid',
-      raw: lastStatus?.order,
+      finalStatus: s,
+      raw: o,
       timedOut: true,
+      partialFilled,
+      filledQuantity: filled,
+      remainingQuantity: rem,
     };
   }
 
@@ -442,6 +488,73 @@ export class SmartOrderService {
     return { modifies, cancels, creates };
   }
 
+  private normalizeModifyInput(
+    m: HLModifyInput,
+  ): NormalizedProtectiveOrder | null {
+    const ot = m.order.orderType;
+
+    const isTrigger = 'trigger' in ot;
+    if (!isTrigger) {
+      return null;
+    }
+
+    const szDecimals = this.assetRegistry.getSzDecimals(m.order.assetName) ?? 6;
+    const isPerp = this.assetRegistry.isPerp(m.order.assetName);
+
+    return {
+      kind: ot.trigger.tpsl,
+      price: this.formatter.formatPrice(
+        ot.trigger.triggerPx,
+        szDecimals,
+        isPerp ? 'perp' : 'spot',
+      ),
+      sz: this.formatter.formatSize(m.order.sz, szDecimals),
+      isMarket: ot.trigger.isMarket,
+    };
+  }
+
+  private isSameProtectiveOrder(
+    a: NormalizedProtectiveOrder,
+    b: NormalizedProtectiveOrder,
+  ): boolean {
+    return (
+      a.kind === b.kind &&
+      a.price === b.price &&
+      a.sz === b.sz &&
+      Boolean(a.isMarket) === Boolean(b.isMarket)
+    );
+  }
+
+  private filterUnchangedOrders(params: {
+    modList: HLModifyInput[];
+    existing: ExistingProtectiveOrder[];
+    assetName: string;
+  }): HLModifyInput[] {
+    const { modList, existing } = params;
+
+    return modList.filter((m) => {
+      const normalized = this.normalizeModifyInput(m);
+
+      // Pas un TP/SL → on conserve
+      if (!normalized) {
+        return true;
+      }
+
+      const exists = existing.some((e) =>
+        this.isSameProtectiveOrder(normalized, e),
+      );
+
+      if (exists) {
+        this.logger.log(
+          `[Skip Update] ${m.order.assetName} ${m.oid} ${normalized.kind.toUpperCase()} ` +
+            `price=${normalized.price} size=${normalized.sz} market=${normalized.isMarket}`,
+        );
+      }
+
+      return !exists;
+    });
+  }
+
   /**
    * Place / update / cancel TP & SL orders so that on-chain state
    * matches the desired BatchProtectiveOrders input.
@@ -530,8 +643,27 @@ export class SmartOrderService {
       desiredSl,
     );
 
+    const realTPModifies = this.filterUnchangedOrders({
+      modList: tpDiff.modifies,
+      existing,
+      assetName,
+    });
+    const realSLModifies = this.filterUnchangedOrders({
+      modList: slDiff.modifies,
+      existing,
+      assetName,
+    });
+
     // 4️⃣ batchModify (priority)
-    const modifies = [...tpDiff.modifies, ...slDiff.modifies];
+    const modifies = [...realTPModifies, ...realSLModifies];
+
+    const ignoredCount =
+      tpDiff.modifies.length + slDiff.modifies.length - modifies.length;
+    if (ignoredCount > 0) {
+      this.logger.debug(
+        `${ignoredCount} protective orders unchanged, skipping modify.`,
+      );
+    }
 
     if (modifies.length > 0) {
       const bathModifyRes = await this.tradeService.batchModifyOrders(

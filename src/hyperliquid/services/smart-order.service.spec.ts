@@ -6,6 +6,8 @@ import {
   HLPlaceOrderResponse,
   HLOrderSize,
   HLOrderDetails,
+  HLModifyInput,
+  ExistingProtectiveOrder,
 } from '@syldel/hl-shared-types';
 import { SmartOrderService } from './smart-order.service';
 import { HyperliquidApiInfoService } from './hyperliquid-api-info.service';
@@ -13,6 +15,7 @@ import { HyperliquidApiTradeService } from './hyperliquid-api-trade.service';
 import { DecimalUtilsService } from '../utils/decimal-utils.service';
 import { PriceMathService } from './price-math.service';
 import { AssetRegistryService } from './asset-registry.service';
+import { ValueFormatterService } from './value-formatter.service';
 
 describe('SmartOrderService', () => {
   let service: SmartOrderService;
@@ -28,6 +31,8 @@ describe('SmartOrderService', () => {
   let batchModifyOrdersSpy: jest.SpyInstance;
   let cancelOrderSpy: jest.SpyInstance;
   let getAssetId: jest.SpyInstance;
+  let getSzDecimals: jest.SpyInstance;
+  let isPerp: jest.SpyInstance;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -56,8 +61,11 @@ describe('SmartOrderService', () => {
           provide: AssetRegistryService,
           useValue: {
             getAssetId: jest.fn(),
+            getSzDecimals: jest.fn(),
+            isPerp: jest.fn(),
           },
         },
+        ValueFormatterService,
       ],
     }).compile();
 
@@ -69,15 +77,17 @@ describe('SmartOrderService', () => {
       HyperliquidApiTradeService,
     );
     assetRegistry = module.get<AssetRegistryService>(AssetRegistryService);
+
     placeOrderSpy = jest.spyOn(tradeService, 'placeOrder');
     waitOrderSpy = jest.spyOn(service, 'waitForOrderFinalStatus');
     getOrderStatusSpy = jest.spyOn(infoService, 'getOrderStatus');
     getPerpAccountStateSpy = jest.spyOn(infoService, 'getPerpAccountState');
-
     getFrontendOpenOrdersSpy = jest.spyOn(infoService, 'getFrontendOpenOrders');
     batchModifyOrdersSpy = jest.spyOn(tradeService, 'batchModifyOrders');
     cancelOrderSpy = jest.spyOn(tradeService, 'cancelOrder');
     getAssetId = jest.spyOn(assetRegistry, 'getAssetId');
+    getSzDecimals = jest.spyOn(assetRegistry, 'getSzDecimals');
+    isPerp = jest.spyOn(assetRegistry, 'isPerp');
   });
 
   describe('instantOrder', () => {
@@ -419,6 +429,8 @@ describe('SmartOrderService', () => {
       });
       placeOrderSpy.mockResolvedValue({});
       getAssetId.mockReturnValue(0);
+      getSzDecimals.mockReturnValue(6);
+      isPerp.mockReturnValue(true);
     });
 
     it('should create new TP and SL orders and push correct oids', async () => {
@@ -758,6 +770,94 @@ describe('SmartOrderService', () => {
       expect(result.sl.updated).toEqual([1888]); // SL 101 => SL 1888
       expect(result.sl.created).toEqual([201]);
       expect(result.sl.cancelled).toHaveLength(0);
+    });
+  });
+
+  describe('filterUnchangedOrders', () => {
+    const assetName = 'ETH';
+    const existing: ExistingProtectiveOrder[] = [
+      { oid: 100, price: '3000', sz: '1.5', kind: 'tp', isMarket: true },
+    ];
+
+    const createBaseModList = (
+      sz: string,
+      price: string,
+      tpsl: 'tp' | 'sl',
+      isMarket: boolean,
+    ): HLModifyInput[] => [
+      {
+        oid: 100,
+        order: {
+          assetName,
+          isBuy: true,
+          reduceOnly: true,
+          sz,
+          limitPx: price,
+          orderType: {
+            trigger: { triggerPx: price, isMarket, tpsl },
+          },
+        },
+      } as HLModifyInput,
+    ];
+
+    it('should return empty when price, size, tpsl and isMarket are identical', () => {
+      const modList = createBaseModList('1.500', '3000', 'tp', true);
+      const result = service['filterUnchangedOrders']({
+        modList,
+        existing,
+        assetName,
+      });
+      expect(result).toHaveLength(0);
+    });
+
+    it('should return the order when only size is different', () => {
+      const modList = createBaseModList('1.6', '3000', 'tp', true);
+      const result = service['filterUnchangedOrders']({
+        modList,
+        existing,
+        assetName,
+      });
+      expect(result).toHaveLength(1);
+    });
+
+    it('should return the order when only price is different', () => {
+      const modList = createBaseModList('1.5', '3005', 'tp', true);
+      const result = service['filterUnchangedOrders']({
+        modList,
+        existing,
+        assetName,
+      });
+      expect(result).toHaveLength(1);
+    });
+
+    it('should return the order when both price and size are different', () => {
+      const modList = createBaseModList('2.0', '3100', 'tp', true);
+      const result = service['filterUnchangedOrders']({
+        modList,
+        existing,
+        assetName,
+      });
+      expect(result).toHaveLength(1);
+    });
+
+    it('should return the order when only TPSL is different', () => {
+      const modList = createBaseModList('1.5', '3000', 'sl', true);
+      const result = service['filterUnchangedOrders']({
+        modList,
+        existing,
+        assetName,
+      });
+      expect(result).toHaveLength(1);
+    });
+
+    it('should return the order when only isMarket is different', () => {
+      const modList = createBaseModList('1.5', '3000', 'tp', false);
+      const result = service['filterUnchangedOrders']({
+        modList,
+        existing,
+        assetName,
+      });
+      expect(result).toHaveLength(1);
     });
   });
 });
