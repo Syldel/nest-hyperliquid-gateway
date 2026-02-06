@@ -387,10 +387,17 @@ export class HyperliquidApiInfoService {
 
   /**
    * Récupère l'historique du portfolio (PnL, Valeur, Volume).
-   * * @param user L'adresse du compte (ex: 0x...)
+   * * @param user Adresse optionnelle
    * @returns Un tableau de données indexé par période (day, week, allTime, etc.)
    */
-  async getUserPortfolio(user: HexString): Promise<PortfolioResponse> {
-    return this.executeInfo<PortfolioResponse>({ type: 'portfolio', user });
+  async getUserPortfolio(user?: HexString): Promise<PortfolioResponse> {
+    const targetUser = (
+      user || this.config.accountAddress
+    ).toLowerCase() as HexString;
+
+    return this.executeInfo<PortfolioResponse>({
+      type: 'portfolio',
+      user: targetUser,
+    });
   }
 }

@@ -48,6 +48,6 @@ export class GetCandlesQueryDto {
 
 export class GetUserPortfolioQueryDto {
   @IsString()
-  @IsNotEmpty()
-  user: HexString;
+  @IsOptional()
+  user?: HexString;
 }

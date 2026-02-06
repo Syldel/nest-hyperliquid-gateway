@@ -136,7 +136,8 @@ export class HyperliquidInfoController {
   }
 
   /**
-   * Récupère l'historique du portfolio
+   * Récupère l'historique du portfolio.
+   * Utilise l'adresse par défaut si aucun 'user' n'est fourni en Query.
    */
   @Get('portfolio')
   async getPortfolio(@Query() query: GetUserPortfolioQueryDto) {
