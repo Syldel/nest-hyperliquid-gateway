@@ -1,6 +1,10 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { HyperliquidApiInfoService } from '../services/hyperliquid-api-info.service';
 import { MarketMetaCacheService } from '../services/market-meta-cache.service';
+import {
+  GetCandlesQueryDto,
+  GetUserPortfolioQueryDto,
+} from '../dtos/hyperliquid-info.query.dto';
 
 @Controller('hyperliquid/info')
 export class HyperliquidInfoController {
@@ -117,5 +121,25 @@ export class HyperliquidInfoController {
     const isTestnet = this.castTestnetFlag(testnet);
     const meta = await this.cache.ensureSpotMeta(isTestnet);
     return this.infoService.getSpotAssets(meta, isTestnet);
+  }
+
+  // ---------------------------------------------------------------------------
+  // 📌 VARIOUS INFO ROUTES
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Récupère l'historique des bougies
+   */
+  @Get('candles')
+  async getCandles(@Query() query: GetCandlesQueryDto) {
+    return this.infoService.getCandleSnapshot(query);
+  }
+
+  /**
+   * Récupère l'historique du portfolio
+   */
+  @Get('portfolio')
+  async getPortfolio(@Query() query: GetUserPortfolioQueryDto) {
+    return this.infoService.getUserPortfolio(query.user);
   }
 }

@@ -14,6 +14,11 @@ import {
   HLFrontendOpenOrdersResponse,
   HLUserFillsResponse,
   HLOid,
+  CandleSnapshotRequest,
+  CandleSnapshot,
+  CandleInterval,
+  PortfolioResponse,
+  HexString,
 } from '@syldel/hl-shared-types';
 import { HyperliquidConfigService } from '../config/hyperliquid-config.service';
 
@@ -228,7 +233,7 @@ export class HyperliquidApiInfoService {
   }
 
   // ---------------------------------------------------------------------------
-  // 📌 PUBLIC ROUTES /INFO
+  // 📌 PUBLIC MARKET/ASSET ROUTES /INFO
   // ---------------------------------------------------------------------------
 
   /**
@@ -346,5 +351,46 @@ export class HyperliquidApiInfoService {
         openInterest: ctx?.openInterest,
       };
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // 📌 VARIOUS PUBLIC ROUTES /INFO
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Récupère l'historique des bougies (max 5000) pour un actif donné.
+   * * @param req - Objet contenant les paramètres de la requête :
+   * - `coin`: Le nom du token (ex: "BTC" ou "xyz:XYZ100")
+   * - `interval`: L'unité de temps (ex: "15m", "1h", "1d")
+   * - `startTime`: Timestamp de début en millisecondes
+   * - `endTime`: (Optionnel) Timestamp de fin en millisecondes
+   * * @returns Un tableau d'objets `CandleSnapshot` représentant les bougies OHLCV.
+   */
+  async getCandleSnapshot(req: {
+    coin: string;
+    interval: CandleInterval;
+    startTime: number;
+    endTime?: number;
+  }): Promise<CandleSnapshot[]> {
+    const body: { type: string; req: CandleSnapshotRequest } = {
+      type: 'candleSnapshot',
+      req: {
+        coin: req.coin,
+        interval: req.interval,
+        startTime: req.startTime,
+        endTime: req.endTime,
+      },
+    };
+
+    return this.executeInfo<CandleSnapshot[]>(body);
+  }
+
+  /**
+   * Récupère l'historique du portfolio (PnL, Valeur, Volume).
+   * * @param user L'adresse du compte (ex: 0x...)
+   * @returns Un tableau de données indexé par période (day, week, allTime, etc.)
+   */
+  async getUserPortfolio(user: HexString): Promise<PortfolioResponse> {
+    return this.executeInfo<PortfolioResponse>({ type: 'portfolio', user });
   }
 }
