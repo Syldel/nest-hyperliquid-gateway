@@ -1,10 +1,11 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { HyperliquidApiInfoService } from '../services/hyperliquid-api-info.service';
 import { MarketMetaCacheService } from '../services/market-meta-cache.service';
 import {
   GetCandlesQueryDto,
   GetUserPortfolioQueryDto,
 } from '../dtos/hyperliquid-info.query.dto';
+import { UserAuthGuard } from '../../common/guards/user-auth.guard';
 
 @Controller('hyperliquid/info')
 export class HyperliquidInfoController {
@@ -31,6 +32,7 @@ export class HyperliquidInfoController {
    * (type: 'clearinghouseState')
    */
   @Get('perp-account')
+  @UseGuards(UserAuthGuard)
   async getPerpAccountState(@Query('testnet') testnet?: string) {
     const isTestnet = this.castTestnetFlag(testnet);
     return this.infoService.getPerpAccountState(isTestnet);
@@ -90,6 +92,7 @@ export class HyperliquidInfoController {
    * (type: 'spotClearinghouseState')
    */
   @Get('spot-balances')
+  @UseGuards(UserAuthGuard)
   async getSpotBalances(@Query('testnet') testnet?: string) {
     const isTestnet = this.castTestnetFlag(testnet);
     return this.infoService.getSpotBalances(isTestnet);
@@ -137,9 +140,9 @@ export class HyperliquidInfoController {
 
   /**
    * Récupère l'historique du portfolio.
-   * Utilise l'adresse par défaut si aucun 'user' n'est fourni en Query.
    */
   @Get('portfolio')
+  @UseGuards(UserAuthGuard)
   async getPortfolio(@Query() query: GetUserPortfolioQueryDto) {
     return this.infoService.getUserPortfolio(query.user);
   }

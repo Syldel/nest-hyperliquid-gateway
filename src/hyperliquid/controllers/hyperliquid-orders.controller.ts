@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 
 import {
   HLOpenOrdersResponse,
@@ -9,6 +9,7 @@ import {
   OrderStatusQueryDto,
 } from '../dtos/hyperliquid-order.dtos';
 import { HyperliquidApiInfoService } from '../services/hyperliquid-api-info.service';
+import { UserAuthGuard } from '../../common/guards/user-auth.guard';
 
 @Controller('hyperliquid/orders')
 export class HyperliquidOrdersController {
@@ -19,6 +20,7 @@ export class HyperliquidOrdersController {
    * Open orders (simples)
    */
   @Get('open')
+  @UseGuards(UserAuthGuard)
   async getOpenOrders(
     @Query() query: GetOpenOrdersQueryDto,
   ): Promise<HLOpenOrdersResponse> {
@@ -30,6 +32,7 @@ export class HyperliquidOrdersController {
    * Open orders enrichis (frontend)
    */
   @Get('open/frontend')
+  @UseGuards(UserAuthGuard)
   async getFrontendOpenOrders(
     @Query() query: GetOpenOrdersQueryDto,
   ): Promise<HLFrontendOpenOrdersResponse> {
@@ -41,6 +44,7 @@ export class HyperliquidOrdersController {
    * Status d’un ordre
    */
   @Get('open/:oid')
+  @UseGuards(UserAuthGuard)
   async getOrderStatus(
     @Param('oid') oid: string,
     @Query() query: OrderStatusQueryDto,

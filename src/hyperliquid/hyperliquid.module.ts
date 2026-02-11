@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AuthModule } from '../auth/auth.module';
 import { CryptoModule } from '../crypto/crypto.module';
 import { HyperliquidTradeController } from './controllers/hyperliquid-trade.controller';
 import { HyperliquidInfoController } from './controllers/hyperliquid-info.controller';
@@ -18,7 +19,7 @@ import { DecimalUtilsService } from './utils/decimal-utils.service';
 import { PriceMathService } from './services/price-math.service';
 
 @Module({
-  imports: [CryptoModule],
+  imports: [AuthModule, CryptoModule],
   controllers: [
     HyperliquidTradeController,
     HyperliquidInfoController,

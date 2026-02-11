@@ -20,14 +20,14 @@ import {
   PortfolioResponse,
   HexString,
 } from '@syldel/hl-shared-types';
-import { HyperliquidConfigService } from '../config/hyperliquid-config.service';
+import { UserContextService } from '../../auth/user-context.service';
 
 @Injectable()
 export class HyperliquidApiInfoService {
   private readonly API_URL = 'https://api.hyperliquid.xyz';
   private readonly TESTNET_API_URL = 'https://testnet.hyperliquid.xyz';
 
-  constructor(private readonly config: HyperliquidConfigService) {}
+  constructor(private readonly userContext: UserContextService) {}
 
   /**
    * Sélectionne l’URL API en fonction du réseau.
@@ -72,7 +72,7 @@ export class HyperliquidApiInfoService {
     return this.executeInfo<HLClearinghouseState>(
       {
         type: 'clearinghouseState',
-        user: this.config.accountAddress.toLowerCase(),
+        user: this.userContext.walletAddress,
       },
       isTestnet,
     );
@@ -87,7 +87,7 @@ export class HyperliquidApiInfoService {
     return this.executeInfo<HLSpotClearinghouseState>(
       {
         type: 'spotClearinghouseState',
-        user: this.config.accountAddress.toLowerCase(),
+        user: this.userContext.walletAddress,
       },
       isTestnet,
     );
@@ -120,7 +120,7 @@ export class HyperliquidApiInfoService {
     return this.executeInfo<HLOrderStatusResponse>(
       {
         type: 'orderStatus',
-        user: this.config.accountAddress.toLowerCase(),
+        user: this.userContext.walletAddress,
         oid,
       },
       isTestnet,
@@ -146,7 +146,7 @@ export class HyperliquidApiInfoService {
     return this.executeInfo<HLOpenOrdersResponse>(
       {
         type: 'openOrders',
-        user: this.config.accountAddress.toLowerCase(),
+        user: this.userContext.walletAddress,
         dex,
       },
       isTestnet,
@@ -173,7 +173,7 @@ export class HyperliquidApiInfoService {
     return this.executeInfo<HLFrontendOpenOrdersResponse>(
       {
         type: 'frontendOpenOrders',
-        user: this.config.accountAddress.toLowerCase(),
+        user: this.userContext.walletAddress,
         dex,
       },
       isTestnet,
@@ -196,7 +196,7 @@ export class HyperliquidApiInfoService {
     return this.executeInfo<HLUserFillsResponse>(
       {
         type: 'userFills',
-        user: this.config.accountAddress.toLowerCase(),
+        user: this.userContext.walletAddress,
         aggregateByTime,
       },
       isTestnet,
@@ -223,7 +223,7 @@ export class HyperliquidApiInfoService {
     return this.executeInfo<HLUserFillsResponse>(
       {
         type: 'userFillsByTime',
-        user: this.config.accountAddress.toLowerCase(),
+        user: this.userContext.walletAddress,
         startTime,
         endTime,
         aggregateByTime,
@@ -392,7 +392,7 @@ export class HyperliquidApiInfoService {
    */
   async getUserPortfolio(user?: HexString): Promise<PortfolioResponse> {
     const targetUser = (
-      user || this.config.accountAddress
+      user || this.userContext.walletAddress
     ).toLowerCase() as HexString;
 
     return this.executeInfo<PortfolioResponse>({

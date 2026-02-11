@@ -85,13 +85,11 @@ https://app.hyperliquid.xyz/API
 
 À renseigner dans le fichier .env :
 ```env
-HYPERLIQUID_ACCOUNT_ADDRESS=
-HYPERLIQUID_AGENT_PRIVATE_KEY=
+JWT_USER_SECRET=
+JWT_SERVICE_SECRET=
+AGENT_ENCRYPTION_SECRET=
+NEST_USER_SERVICE_URL=http://localhost:3001
 ```
-
-- HYPERLIQUID_ACCOUNT_ADDRESS : adresse du compte principal
-
-- HYPERLIQUID_AGENT_PRIVATE_KEY : clé privée de l’agent wallet
 
 ## API using
 
