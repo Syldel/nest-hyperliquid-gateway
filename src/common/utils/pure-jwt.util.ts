@@ -39,4 +39,37 @@ export class PureJwtUtil {
 
     return payload;
   }
+
+  /**
+   * Génère un JWT signé en HS256
+   * @param payload Données à inclure dans le token
+   * @param secret Clé secrète pour la signature
+   */
+  static sign(payload: Record<string, any>, secret: string): string {
+    const header = {
+      alg: 'HS256',
+      typ: 'JWT',
+    };
+
+    const base64UrlEncode = (obj: any): string => {
+      return Buffer.from(JSON.stringify(obj))
+        .toString('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+    };
+
+    const encodedHeader = base64UrlEncode(header);
+    const encodedPayload = base64UrlEncode(payload);
+
+    const signature = crypto
+      .createHmac('sha256', secret)
+      .update(`${encodedHeader}.${encodedPayload}`)
+      .digest('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+
+    return `${encodedHeader}.${encodedPayload}.${signature}`;
+  }
 }
