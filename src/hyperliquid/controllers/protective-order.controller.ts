@@ -1,10 +1,11 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 
 import { SmartOrderService } from '../services/smart-order.service';
 import {
   BatchProtectiveOrdersDto,
   ProtectiveOrderDto,
 } from '../dtos/protective-order.dtos';
+import { UserAuthGuard } from '../../common/guards/user-auth.guard';
 
 @Controller('orders')
 export class ProtectiveOrdersController {
@@ -17,6 +18,7 @@ export class ProtectiveOrdersController {
    * - Supports market or limit trigger execution
    */
   @Post('protective')
+  @UseGuards(UserAuthGuard)
   async placeProtectiveOrder(@Body() dto: ProtectiveOrderDto) {
     const params = this.smartOrderService.toHLOrderDetails(dto);
     return this.smartOrderService.placeProtectiveOrder(params, dto.isTestnet);
@@ -30,6 +32,7 @@ export class ProtectiveOrdersController {
    * - One asset per call
    */
   @Post('batch-protective')
+  @UseGuards(UserAuthGuard)
   async placeBatchProtectiveOrders(@Body() body: BatchProtectiveOrdersDto) {
     return this.smartOrderService.placeBatchProtectiveOrders(
       {

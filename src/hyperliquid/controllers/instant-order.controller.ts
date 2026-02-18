@@ -1,14 +1,16 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 
+import { HLOrderSize } from '@syldel/hl-shared-types';
 import { SmartOrderService } from '../services/smart-order.service';
 import { InstantOrderDto, OrderSizeDto } from '../dtos/instant-order.dtos';
-import { HLOrderSize } from '@syldel/hl-shared-types';
+import { UserAuthGuard } from '../../common/guards/user-auth.guard';
 
 @Controller('orders')
 export class InstantOrderController {
   constructor(private readonly smartOrderService: SmartOrderService) {}
 
   @Post('instant')
+  @UseGuards(UserAuthGuard)
   async instantOrder(@Body() dto: InstantOrderDto) {
     return this.smartOrderService.instantOrder({
       assetName: dto.assetName,

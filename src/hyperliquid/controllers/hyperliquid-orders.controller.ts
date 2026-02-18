@@ -8,12 +8,12 @@ import {
   GetOpenOrdersQueryDto,
   OrderStatusQueryDto,
 } from '../dtos/hyperliquid-order.dtos';
-import { HyperliquidApiInfoService } from '../services/hyperliquid-api-info.service';
+import { HyperliquidApiPrivateInfoService } from '../services/hyperliquid-api-private-info.service';
 import { UserAuthGuard } from '../../common/guards/user-auth.guard';
 
 @Controller('hyperliquid/orders')
 export class HyperliquidOrdersController {
-  constructor(private readonly infoService: HyperliquidApiInfoService) {}
+  constructor(private readonly infoService: HyperliquidApiPrivateInfoService) {}
 
   /**
    * GET /open

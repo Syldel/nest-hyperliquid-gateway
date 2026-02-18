@@ -29,12 +29,13 @@ import {
   HLPlaceOrderResponse,
   HLOid,
 } from '@syldel/hl-shared-types';
-import { HyperliquidConfigService } from '../config/hyperliquid-config.service';
 import { NonceManagerService } from '../../crypto/services/nonce-manager.service';
 import { ValueFormatterService } from './value-formatter.service';
 import { AssetRegistryService } from './asset-registry.service';
 import { SigningService } from '../../crypto/services/signing.service';
 import { WalletService } from '../../crypto/services/wallet.service';
+import { UserContextService } from '../../auth/user-context.service';
+import { UserClient } from '../../auth/user-client.service';
 
 @Injectable()
 export class HyperliquidApiTradeService {
@@ -44,15 +45,14 @@ export class HyperliquidApiTradeService {
   private readonly RETRY_DELAY_MS = 3000;
 
   constructor(
+    private readonly userContext: UserContextService,
+    private readonly userClient: UserClient,
     private readonly nonceManager: NonceManagerService,
-    private readonly config: HyperliquidConfigService,
     private readonly formatter: ValueFormatterService,
     private readonly assetRegistry: AssetRegistryService,
     private readonly signingService: SigningService,
     private readonly walletService: WalletService,
-  ) {
-    this.walletService.createFromPrivateKey(this.config.agentPrivateKey);
-  }
+  ) {}
 
   private getApiUrl(isTestnet: boolean): string {
     return isTestnet ? this.TESTNET_API_URL : this.API_URL;
@@ -69,6 +69,12 @@ export class HyperliquidApiTradeService {
     let nonce: number | undefined;
     let lastError: unknown;
 
+    const privateKey = await this.userClient.getDecryptedAgentKey(
+      this.userContext.userId,
+    );
+
+    const wallet = this.walletService.createFromPrivateKey(privateKey);
+
     for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
       try {
         // 1. Acquérir un nonce
@@ -76,7 +82,7 @@ export class HyperliquidApiTradeService {
 
         // 2. Signer l'action
         const signature = await this.signingService.signL1Action({
-          wallet: this.walletService.wallet,
+          wallet,
           action,
           nonce,
           // vaultAddress: null,

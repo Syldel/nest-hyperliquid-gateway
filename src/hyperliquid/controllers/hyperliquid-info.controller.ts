@@ -1,16 +1,15 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { HyperliquidApiInfoService } from '../services/hyperliquid-api-info.service';
+import { HyperliquidApiPrivateInfoService } from '../services/hyperliquid-api-private-info.service';
+import { HyperliquidApiPublicInfoService } from '../services/hyperliquid-api-public-info.service';
 import { MarketMetaCacheService } from '../services/market-meta-cache.service';
-import {
-  GetCandlesQueryDto,
-  GetUserPortfolioQueryDto,
-} from '../dtos/hyperliquid-info.query.dto';
+import { GetCandlesQueryDto } from '../dtos/hyperliquid-info.query.dto';
 import { UserAuthGuard } from '../../common/guards/user-auth.guard';
 
 @Controller('hyperliquid/info')
 export class HyperliquidInfoController {
   constructor(
-    private readonly infoService: HyperliquidApiInfoService,
+    private readonly privateInfoService: HyperliquidApiPrivateInfoService,
+    private readonly publicInfoService: HyperliquidApiPublicInfoService,
     private readonly cache: MarketMetaCacheService,
   ) {}
 
@@ -35,7 +34,7 @@ export class HyperliquidInfoController {
   @UseGuards(UserAuthGuard)
   async getPerpAccountState(@Query('testnet') testnet?: string) {
     const isTestnet = this.castTestnetFlag(testnet);
-    return this.infoService.getPerpAccountState(isTestnet);
+    return this.privateInfoService.getPerpAccountState(isTestnet);
   }
 
   /**
@@ -65,7 +64,7 @@ export class HyperliquidInfoController {
   async getPerpAssets(@Query('testnet') testnet?: string) {
     const isTestnet = this.castTestnetFlag(testnet);
     const meta = await this.cache.ensurePerpMeta(isTestnet);
-    return this.infoService.getPerpAssets(meta, isTestnet);
+    return this.publicInfoService.getPerpAssets(meta, isTestnet);
   }
 
   /**
@@ -79,7 +78,7 @@ export class HyperliquidInfoController {
   @Get('perp-markets')
   async getPerpMarkets(@Query('testnet') testnet?: string) {
     const isTestnet = this.castTestnetFlag(testnet);
-    return this.infoService.getPerpMarketsWithPrices(isTestnet);
+    return this.publicInfoService.getPerpMarketsWithPrices(isTestnet);
   }
 
   // ---------------------------------------------------------------------------
@@ -95,7 +94,7 @@ export class HyperliquidInfoController {
   @UseGuards(UserAuthGuard)
   async getSpotBalances(@Query('testnet') testnet?: string) {
     const isTestnet = this.castTestnetFlag(testnet);
-    return this.infoService.getSpotBalances(isTestnet);
+    return this.privateInfoService.getSpotBalances(isTestnet);
   }
 
   /**
@@ -123,7 +122,7 @@ export class HyperliquidInfoController {
   async getSpotAssets(@Query('testnet') testnet?: string) {
     const isTestnet = this.castTestnetFlag(testnet);
     const meta = await this.cache.ensureSpotMeta(isTestnet);
-    return this.infoService.getSpotAssets(meta, isTestnet);
+    return this.publicInfoService.getSpotAssets(meta, isTestnet);
   }
 
   // ---------------------------------------------------------------------------
@@ -135,7 +134,7 @@ export class HyperliquidInfoController {
    */
   @Get('candles')
   async getCandles(@Query() query: GetCandlesQueryDto) {
-    return this.infoService.getCandleSnapshot(query);
+    return this.publicInfoService.getCandleSnapshot(query);
   }
 
   /**
@@ -143,7 +142,7 @@ export class HyperliquidInfoController {
    */
   @Get('portfolio')
   @UseGuards(UserAuthGuard)
-  async getPortfolio(@Query() query: GetUserPortfolioQueryDto) {
-    return this.infoService.getUserPortfolio(query.user);
+  async getPortfolio() {
+    return this.privateInfoService.getUserPortfolio();
   }
 }

@@ -5,19 +5,12 @@ import * as path from 'path';
 
 @Injectable()
 export class HyperliquidConfigService {
-  public readonly accountAddress: string;
-  public readonly agentAddress: string;
-  public readonly agentPrivateKey: string;
   public readonly marketRefreshInterval: number;
 
   constructor() {
     this.loadEnvFile();
 
-    const requiredVars = [
-      'HYPERLIQUID_ACCOUNT_ADDRESS',
-      'HYPERLIQUID_AGENT_PRIVATE_KEY',
-      'MARKET_REFRESH_INTERVAL_MS',
-    ];
+    const requiredVars = ['MARKET_REFRESH_INTERVAL_MS'];
     const missingVars = requiredVars.filter((v) => !process.env[v]);
 
     if (missingVars.length > 0) {
@@ -25,9 +18,6 @@ export class HyperliquidConfigService {
         `Missing required Hyperliquid environment variables: ${missingVars.join(', ')}`,
       );
     }
-
-    this.accountAddress = process.env.HYPERLIQUID_ACCOUNT_ADDRESS!;
-    this.agentPrivateKey = process.env.HYPERLIQUID_AGENT_PRIVATE_KEY!;
 
     const rawInterval = process.env.MARKET_REFRESH_INTERVAL_MS;
     const DEFAULT_INTERVAL_MS = 60 * 60 * 1000; // 60 minutes

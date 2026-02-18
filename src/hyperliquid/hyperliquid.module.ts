@@ -10,7 +10,8 @@ import { InstantOrderController } from './controllers/instant-order.controller';
 import { ProtectiveOrdersController } from './controllers/protective-order.controller';
 import { HyperliquidConfigService } from './config/hyperliquid-config.service';
 import { HyperliquidApiTradeService } from './services/hyperliquid-api-trade.service';
-import { HyperliquidApiInfoService } from './services/hyperliquid-api-info.service';
+import { HyperliquidApiPrivateInfoService } from './services/hyperliquid-api-private-info.service';
+import { HyperliquidApiPublicInfoService } from './services/hyperliquid-api-public-info.service';
 import { MarketMetaCacheService } from './services/market-meta-cache.service';
 import { AssetRegistryService } from './services/asset-registry.service';
 import { ValueFormatterService } from './services/value-formatter.service';
@@ -31,7 +32,8 @@ import { PriceMathService } from './services/price-math.service';
   providers: [
     HyperliquidConfigService,
     HyperliquidApiTradeService,
-    HyperliquidApiInfoService,
+    HyperliquidApiPrivateInfoService,
+    HyperliquidApiPublicInfoService,
     MarketMetaCacheService,
     ValueFormatterService,
     AssetRegistryService,

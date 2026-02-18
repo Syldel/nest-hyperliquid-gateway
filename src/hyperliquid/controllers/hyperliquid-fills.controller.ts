@@ -1,12 +1,12 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 
 import { HLUserFillsResponse } from '@syldel/hl-shared-types';
-import { HyperliquidApiInfoService } from '../services/hyperliquid-api-info.service';
+import { HyperliquidApiPrivateInfoService } from '../services/hyperliquid-api-private-info.service';
 import { UserAuthGuard } from '../../common/guards/user-auth.guard';
 
 @Controller('hyperliquid/fills')
 export class HyperliquidFillsController {
-  constructor(private readonly infoService: HyperliquidApiInfoService) {}
+  constructor(private readonly infoService: HyperliquidApiPrivateInfoService) {}
 
   /**
    * GET /hyperliquid/fills

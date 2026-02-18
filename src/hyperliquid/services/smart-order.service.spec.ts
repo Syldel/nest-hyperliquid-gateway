@@ -10,7 +10,8 @@ import {
   ExistingProtectiveOrder,
 } from '@syldel/hl-shared-types';
 import { SmartOrderService } from './smart-order.service';
-import { HyperliquidApiInfoService } from './hyperliquid-api-info.service';
+import { HyperliquidApiPrivateInfoService } from './hyperliquid-api-private-info.service';
+import { HyperliquidApiPublicInfoService } from './hyperliquid-api-public-info.service';
 import { HyperliquidApiTradeService } from './hyperliquid-api-trade.service';
 import { DecimalUtilsService } from '../utils/decimal-utils.service';
 import { PriceMathService } from './price-math.service';
@@ -19,7 +20,8 @@ import { ValueFormatterService } from './value-formatter.service';
 
 describe('SmartOrderService', () => {
   let service: SmartOrderService;
-  let infoService: HyperliquidApiInfoService;
+  let privateInfoService: HyperliquidApiPrivateInfoService;
+  let publicInfoService: HyperliquidApiPublicInfoService;
   let tradeService: HyperliquidApiTradeService;
   let assetRegistry: AssetRegistryService;
 
@@ -39,12 +41,17 @@ describe('SmartOrderService', () => {
       providers: [
         SmartOrderService,
         {
-          provide: HyperliquidApiInfoService,
+          provide: HyperliquidApiPrivateInfoService,
           useValue: {
-            getPerpMarketsWithPrices: jest.fn(),
             getOrderStatus: jest.fn(),
             getPerpAccountState: jest.fn(),
             getFrontendOpenOrders: jest.fn(),
+          },
+        },
+        {
+          provide: HyperliquidApiPublicInfoService,
+          useValue: {
+            getPerpMarketsWithPrices: jest.fn(),
           },
         },
         {
@@ -70,8 +77,11 @@ describe('SmartOrderService', () => {
     }).compile();
 
     service = module.get<SmartOrderService>(SmartOrderService);
-    infoService = module.get<HyperliquidApiInfoService>(
-      HyperliquidApiInfoService,
+    privateInfoService = module.get<HyperliquidApiPrivateInfoService>(
+      HyperliquidApiPrivateInfoService,
+    );
+    publicInfoService = module.get<HyperliquidApiPublicInfoService>(
+      HyperliquidApiPublicInfoService,
     );
     tradeService = module.get<HyperliquidApiTradeService>(
       HyperliquidApiTradeService,
@@ -80,9 +90,15 @@ describe('SmartOrderService', () => {
 
     placeOrderSpy = jest.spyOn(tradeService, 'placeOrder');
     waitOrderSpy = jest.spyOn(service, 'waitForOrderFinalStatus');
-    getOrderStatusSpy = jest.spyOn(infoService, 'getOrderStatus');
-    getPerpAccountStateSpy = jest.spyOn(infoService, 'getPerpAccountState');
-    getFrontendOpenOrdersSpy = jest.spyOn(infoService, 'getFrontendOpenOrders');
+    getOrderStatusSpy = jest.spyOn(privateInfoService, 'getOrderStatus');
+    getPerpAccountStateSpy = jest.spyOn(
+      privateInfoService,
+      'getPerpAccountState',
+    );
+    getFrontendOpenOrdersSpy = jest.spyOn(
+      privateInfoService,
+      'getFrontendOpenOrders',
+    );
     batchModifyOrdersSpy = jest.spyOn(tradeService, 'batchModifyOrders');
     cancelOrderSpy = jest.spyOn(tradeService, 'cancelOrder');
     getAssetId = jest.spyOn(assetRegistry, 'getAssetId');
@@ -93,9 +109,9 @@ describe('SmartOrderService', () => {
   describe('instantOrder', () => {
     it('should create order', async () => {
       const marketData = [{ name: 'BTC', markPrice: '50000', szDecimals: 8 }];
-      (infoService.getPerpMarketsWithPrices as jest.Mock).mockResolvedValue(
-        marketData,
-      );
+      (
+        publicInfoService.getPerpMarketsWithPrices as jest.Mock
+      ).mockResolvedValue(marketData);
       waitOrderSpy.mockResolvedValue({
         finalStatus: 'filled',
         raw: { status: 'filled' } as HLOrderStatusData,
@@ -126,9 +142,9 @@ describe('SmartOrderService', () => {
 
     it('should retry when order returns an "post only" error', async () => {
       const marketData = [{ name: 'BTC', markPrice: '50000', szDecimals: 8 }];
-      (infoService.getPerpMarketsWithPrices as jest.Mock).mockResolvedValue(
-        marketData,
-      );
+      (
+        publicInfoService.getPerpMarketsWithPrices as jest.Mock
+      ).mockResolvedValue(marketData);
       waitOrderSpy.mockResolvedValue({
         finalStatus: 'filled',
         raw: { status: 'filled' } as HLOrderStatusData,
@@ -177,9 +193,9 @@ describe('SmartOrderService', () => {
 
     it('should not retry when order returns an "insufficient margin" error', async () => {
       const marketData = [{ name: 'BTC', markPrice: '50000', szDecimals: 8 }];
-      (infoService.getPerpMarketsWithPrices as jest.Mock).mockResolvedValue(
-        marketData,
-      );
+      (
+        publicInfoService.getPerpMarketsWithPrices as jest.Mock
+      ).mockResolvedValue(marketData);
 
       const errorResponse: HLSuccessResponse<HLPlaceOrderResponse> = {
         status: 'ok',
@@ -226,7 +242,7 @@ describe('SmartOrderService', () => {
           order: { status: 'filled' },
         });
 
-      const result = await service.waitForOrderFinalStatus(infoService, {
+      const result = await service.waitForOrderFinalStatus(privateInfoService, {
         oid: 123,
         isTestnet: false,
         timeoutMs: 100,
@@ -243,12 +259,15 @@ describe('SmartOrderService', () => {
         order: { status: 'open' },
       });
 
-      const timeoutPromise = service.waitForOrderFinalStatus(infoService, {
-        oid: 123,
-        isTestnet: false,
-        timeoutMs: 50,
-        pollIntervalMs: 10,
-      });
+      const timeoutPromise = service.waitForOrderFinalStatus(
+        privateInfoService,
+        {
+          oid: 123,
+          isTestnet: false,
+          timeoutMs: 50,
+          pollIntervalMs: 10,
+        },
+      );
 
       await expect(timeoutPromise).resolves.toMatchObject({
         finalStatus: 'open',

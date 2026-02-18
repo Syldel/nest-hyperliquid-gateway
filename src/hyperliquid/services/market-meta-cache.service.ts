@@ -5,7 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { Subject } from 'rxjs';
-import { HyperliquidApiInfoService } from './hyperliquid-api-info.service';
+import { HyperliquidApiPublicInfoService } from './hyperliquid-api-public-info.service';
 import { HLPerpMeta, HLSpotMeta } from '@syldel/hl-shared-types';
 import { HyperliquidConfigService } from '../config/hyperliquid-config.service';
 
@@ -27,7 +27,7 @@ export class MarketMetaCacheService implements OnModuleInit, OnModuleDestroy {
   private intervalId: NodeJS.Timeout | null = null;
 
   constructor(
-    private readonly infoService: HyperliquidApiInfoService,
+    private readonly infoService: HyperliquidApiPublicInfoService,
     private readonly config: HyperliquidConfigService,
   ) {}
 

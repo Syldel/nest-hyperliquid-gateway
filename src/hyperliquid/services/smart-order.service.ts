@@ -23,7 +23,8 @@ import {
   SmartOrderResponse,
   WaitOrderStatusOptions,
 } from '@syldel/hl-shared-types';
-import { HyperliquidApiInfoService } from './hyperliquid-api-info.service';
+import { HyperliquidApiPrivateInfoService } from './hyperliquid-api-private-info.service';
+import { HyperliquidApiPublicInfoService } from './hyperliquid-api-public-info.service';
 import { HyperliquidApiTradeService } from './hyperliquid-api-trade.service';
 import { DecimalUtilsService } from '../utils/decimal-utils.service';
 import { PriceMathService } from './price-math.service';
@@ -35,7 +36,8 @@ export class SmartOrderService {
   private readonly logger = new Logger(SmartOrderService.name);
 
   constructor(
-    private readonly infoService: HyperliquidApiInfoService,
+    private readonly privateInfoService: HyperliquidApiPrivateInfoService,
+    private readonly publicInfoService: HyperliquidApiPublicInfoService,
     private readonly tradeService: HyperliquidApiTradeService,
     private readonly decimalUtils: DecimalUtilsService,
     private readonly priceMath: PriceMathService,
@@ -59,7 +61,8 @@ export class SmartOrderService {
     while (attempt < maxRetries) {
       attempt++;
 
-      const assets = await this.infoService.getPerpMarketsWithPrices(isTestnet);
+      const assets =
+        await this.publicInfoService.getPerpMarketsWithPrices(isTestnet);
       const market = assets.find((a) => a.name === assetName);
       if (!market || !market.markPrice) {
         throw new Error(`Invalid market data for ${assetName}`);
@@ -127,7 +130,7 @@ export class SmartOrderService {
         }
 
         const { finalStatus, raw, timedOut } =
-          await this.waitForOrderFinalStatus(this.infoService, {
+          await this.waitForOrderFinalStatus(this.privateInfoService, {
             oid,
             isTestnet,
           });
@@ -154,7 +157,7 @@ export class SmartOrderService {
             );
           }
 
-          const lastStatus = await this.infoService.getOrderStatus(
+          const lastStatus = await this.privateInfoService.getOrderStatus(
             oid,
             isTestnet,
           );
@@ -199,7 +202,8 @@ export class SmartOrderService {
       });
     }
 
-    const perpState = await this.infoService.getPerpAccountState(isTestnet);
+    const perpState =
+      await this.privateInfoService.getPerpAccountState(isTestnet);
     const accountValue = perpState.marginSummary.accountValue;
 
     if (!this.decimalUtils.isPositive(accountValue)) {
@@ -587,7 +591,7 @@ export class SmartOrderService {
     };
 
     // 1️⃣ Fetch existing protective orders
-    const openOrders = await this.infoService.getFrontendOpenOrders(
+    const openOrders = await this.privateInfoService.getFrontendOpenOrders(
       '',
       isTestnet,
     );
