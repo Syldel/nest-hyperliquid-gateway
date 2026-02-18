@@ -1,6 +1,6 @@
 {
   "name": "nest-hyperliquid-gateway",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "NestJS gateway for the Hyperliquid API, providing typed services for order execution, signing, and market data access.",
   "author": "Syldel",
   "private": true,
