@@ -3,18 +3,18 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# fichiers nécessaires au build
+# Installer les dépendances
 COPY package*.json ./
+RUN npm ci
+
+# Copier les configs de build
 COPY tsconfig*.json ./
 COPY nest-cli.json ./
 
-# installer TOUTES les deps (y compris dev)
-RUN npm ci
+# Copier le code source
+COPY src ./src
 
-# copier le code
-COPY . .
-
-# build NestJS
+# Build
 RUN npm run build
 
 
@@ -25,12 +25,18 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# dépendances prod uniquement
+# Dépendances prod uniquement
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-# code compilé uniquement
+# Copie du build depuis l'étape builder
 COPY --from=builder /app/dist ./dist
+
+# CHANGEMENT DE PROPRIÉTAIRE
+RUN chown -R node:node /app
+
+# On bascule sur l'utilisateur node pour la sécurité
+USER node
 
 EXPOSE 3005
 
