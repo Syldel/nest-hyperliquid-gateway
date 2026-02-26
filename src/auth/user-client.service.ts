@@ -4,27 +4,21 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
-import { PureJwtUtil } from '../common/utils/pure-jwt.util';
-import { CryptoService } from '../crypto/services/crypto.service';
+import { AesGcmUtil, EncryptedData, PureJwtUtil } from '@syldel/crypto-utils';
 
 @Injectable()
 export class UserClient {
-  private readonly keyCache = new Map<
-    string,
-    { data: string; iv: string; tag: string }
-  >();
+  private readonly keyCache = new Map<string, EncryptedData>();
   private readonly cacheTimers = new Map<string, NodeJS.Timeout>();
 
   // Clé de session unique générée à chaque démarrage du serveur
   private readonly sessionKey = crypto.randomBytes(32);
   private readonly TTL_24H = 24 * 60 * 60 * 1000;
 
-  constructor(private readonly cryptoService: CryptoService) {}
-
   async getDecryptedAgentKey(userId: string): Promise<string> {
     const cached = this.keyCache.get(userId);
     if (cached) {
-      return this.cryptoService.decrypt(cached, this.sessionKey);
+      return AesGcmUtil.decrypt(cached, this.sessionKey);
     }
 
     const decryptedKey = await this.fetchAndDecryptKey(userId);
@@ -39,7 +33,7 @@ export class UserClient {
       clearTimeout(this.cacheTimers.get(userId));
     }
 
-    const encrypted = this.cryptoService.encrypt(decryptedKey, this.sessionKey);
+    const encrypted = AesGcmUtil.encrypt(decryptedKey, this.sessionKey);
 
     this.keyCache.set(userId, encrypted);
 
@@ -87,22 +81,13 @@ export class UserClient {
       );
     }
 
-    const data = (await response.json()) as {
-      encryptedData: string;
-      iv: string;
-      tag: string;
-    };
+    const data = (await response.json()) as EncryptedData;
 
     if (!data) {
       throw new Error('No agent key data received');
     }
 
-    const { encryptedData, iv, tag } = data;
-
-    const decryptedKey = this.cryptoService.decrypt(
-      { data: encryptedData, iv, tag },
-      masterSecret,
-    );
+    const decryptedKey = AesGcmUtil.decrypt(data, masterSecret);
 
     return decryptedKey;
   }

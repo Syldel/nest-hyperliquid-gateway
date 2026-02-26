@@ -4,7 +4,7 @@ import {
   ExecutionContext,
   UnauthorizedException,
 } from '@nestjs/common';
-import { PureJwtUtil } from '../utils/pure-jwt.util';
+import { PureJwtUtil } from '@syldel/crypto-utils';
 import {
   JwtUserPayload,
   ActiveUser,

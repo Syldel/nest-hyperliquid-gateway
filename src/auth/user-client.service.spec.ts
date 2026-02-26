@@ -4,18 +4,18 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { UserClient } from './user-client.service';
-import { CryptoService } from '../crypto/services/crypto.service';
+import { AesGcmUtil } from '@syldel/crypto-utils';
 
 describe('UserClient', () => {
   let service: UserClient;
-  let cryptoService: CryptoService;
+
   const OLD_ENV = process.env;
 
   const userId = 'user-123';
   const rawKey = '0xprivatekey';
   const encryptedKey = { data: 'enc', iv: 'iv', tag: 'tag' };
   const fetchResponse = {
-    encryptedData: encryptedKey.data,
+    data: encryptedKey.data,
     iv: encryptedKey.iv,
     tag: encryptedKey.tag,
   };
@@ -29,11 +29,10 @@ describe('UserClient', () => {
     process.env.AGENT_ENCRYPTION_SECRET = 'master-secret';
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [UserClient, CryptoService],
+      providers: [UserClient],
     }).compile();
 
     service = module.get<UserClient>(UserClient);
-    cryptoService = module.get<CryptoService>(CryptoService);
 
     global.fetch = jest.fn();
     jest.useFakeTimers();
@@ -50,9 +49,9 @@ describe('UserClient', () => {
 
   describe('getDecryptedAgentKey', () => {
     it('should fetch, decrypt and store in cache when not present', async () => {
-      const decryptSpy = jest.spyOn(cryptoService, 'decrypt');
+      const decryptSpy = jest.spyOn(AesGcmUtil, 'decrypt');
       decryptSpy.mockReturnValue(rawKey);
-      const encryptSpy = jest.spyOn(cryptoService, 'encrypt');
+      const encryptSpy = jest.spyOn(AesGcmUtil, 'encrypt');
       encryptSpy.mockReturnValue(encryptedKey);
 
       (global.fetch as jest.Mock).mockResolvedValueOnce({
@@ -75,7 +74,7 @@ describe('UserClient', () => {
     });
 
     it('should return value from cache and skip fetch on second call', async () => {
-      const decryptSpy = jest.spyOn(cryptoService, 'decrypt');
+      const decryptSpy = jest.spyOn(AesGcmUtil, 'decrypt');
       decryptSpy.mockReturnValue(rawKey);
 
       (global.fetch as jest.Mock).mockResolvedValueOnce({
@@ -102,7 +101,7 @@ describe('UserClient', () => {
     });
 
     it('should fetch again after cache expiration (24h)', async () => {
-      const decryptSpy = jest.spyOn(cryptoService, 'decrypt');
+      const decryptSpy = jest.spyOn(AesGcmUtil, 'decrypt');
       decryptSpy.mockReturnValue(rawKey);
 
       (global.fetch as jest.Mock).mockResolvedValue({
