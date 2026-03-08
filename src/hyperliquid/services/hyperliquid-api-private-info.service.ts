@@ -28,7 +28,6 @@ export class HyperliquidApiPrivateInfoService extends HyperliquidApiBaseInfoServ
   async getPerpAccountState(
     isTestnet: boolean = false,
   ): Promise<HLClearinghouseState> {
-    console.log('getPerpAccountState', this.userContext.walletAddress);
     return this.executeInfo<HLClearinghouseState>(
       {
         type: 'clearinghouseState',

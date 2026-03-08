@@ -100,7 +100,7 @@ describe('UserClient', () => {
       expect(secondPayload).not.toEqual(encryptedKey);
     });
 
-    it('should fetch again after cache expiration (24h)', async () => {
+    it('should fetch again after cache expiration (7 * 24h)', async () => {
       const decryptSpy = jest.spyOn(AesGcmUtil, 'decrypt');
       decryptSpy.mockReturnValue(rawKey);
 
@@ -111,7 +111,7 @@ describe('UserClient', () => {
 
       await service.getDecryptedAgentKey(userId);
 
-      jest.advanceTimersByTime(24 * 60 * 60 * 1000 + 1);
+      jest.advanceTimersByTime(7 * 24 * 60 * 60 * 1000 + 1);
 
       await service.getDecryptedAgentKey(userId);
       expect(global.fetch).toHaveBeenCalledTimes(2);
