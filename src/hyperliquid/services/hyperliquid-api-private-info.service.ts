@@ -8,6 +8,8 @@ import {
   HLUserFillsResponse,
   HLOid,
   PortfolioResponse,
+  HLUserFillsRequest,
+  HLUserFillsByTimeRequest,
 } from '@syldel/hl-shared-types';
 import { UserContextService } from '../../auth/user-context.service';
 import { HyperliquidApiBaseInfoService } from './hyperliquid-api-base-info.service';
@@ -145,18 +147,18 @@ export class HyperliquidApiPrivateInfoService extends HyperliquidApiBaseInfoServ
    * Returns up to 2000 of the most recent fills (spot and perp).
    * Intended for analytics, audit logs, and execution history.
    *
-   * @param aggregateByTime Whether to aggregate partial fills by block/time.
+   * @param request Request parameters.
    * @param isTestnet Whether to use the Hyperliquid testnet.
    */
   async getUserFills(
-    aggregateByTime: boolean = false,
+    request: HLUserFillsRequest = {},
     isTestnet: boolean = false,
   ): Promise<HLUserFillsResponse> {
     return this.executeInfo<HLUserFillsResponse>(
       {
         type: 'userFills',
         user: this.userContext.walletAddress,
-        aggregateByTime,
+        ...(request as Record<string, unknown>),
       },
       isTestnet,
     );
@@ -168,24 +170,18 @@ export class HyperliquidApiPrivateInfoService extends HyperliquidApiBaseInfoServ
    * Returns up to 2000 fills per request.
    * Only the 10,000 most recent fills are accessible.
    *
-   * @param startTime Start timestamp (ms), inclusive.
-   * @param endTime End timestamp (ms), inclusive. Defaults to now.
-   * @param aggregateByTime Whether to aggregate partial fills by block/time.
+   * @param request Request parameters.
    * @param isTestnet Whether to use the Hyperliquid testnet.
    */
   async getUserFillsByTime(
-    startTime: number,
-    endTime?: number,
-    aggregateByTime: boolean = false,
+    request: HLUserFillsByTimeRequest,
     isTestnet: boolean = false,
   ): Promise<HLUserFillsResponse> {
     return this.executeInfo<HLUserFillsResponse>(
       {
         type: 'userFillsByTime',
         user: this.userContext.walletAddress,
-        startTime,
-        endTime,
-        aggregateByTime,
+        ...(request as unknown as Record<string, unknown>),
       },
       isTestnet,
     );

@@ -1,6 +1,10 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 
-import { HLUserFillsResponse } from '@syldel/hl-shared-types';
+import {
+  HLUserFillsByTimeRequest,
+  HLUserFillsRequest,
+  HLUserFillsResponse,
+} from '@syldel/hl-shared-types';
 import { HyperliquidApiPrivateInfoService } from '../services/hyperliquid-api-private-info.service';
 import { UserAuthGuard } from '../../common/guards/user-auth.guard';
 
@@ -18,10 +22,10 @@ export class HyperliquidFillsController {
     @Query('aggregateByTime') aggregateByTime?: string,
     @Query('testnet') testnet?: string,
   ): Promise<HLUserFillsResponse> {
-    return this.infoService.getUserFills(
-      aggregateByTime === 'true',
-      testnet === 'true',
-    );
+    const request: HLUserFillsRequest = {
+      aggregateByTime: aggregateByTime === 'true',
+    };
+    return this.infoService.getUserFills(request, testnet === 'true');
   }
 
   /**
@@ -36,11 +40,11 @@ export class HyperliquidFillsController {
     @Query('aggregateByTime') aggregateByTime?: string,
     @Query('testnet') testnet?: string,
   ): Promise<HLUserFillsResponse> {
-    return this.infoService.getUserFillsByTime(
-      Number(startTime),
-      endTime ? Number(endTime) : undefined,
-      aggregateByTime === 'true',
-      testnet === 'true',
-    );
+    const request: HLUserFillsByTimeRequest = {
+      startTime: Number(startTime),
+      endTime: endTime ? Number(endTime) : undefined,
+      aggregateByTime: aggregateByTime === 'true',
+    };
+    return this.infoService.getUserFillsByTime(request, testnet === 'true');
   }
 }
