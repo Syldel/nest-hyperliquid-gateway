@@ -25,21 +25,33 @@ export class DecimalUtilsService {
 
   /**
    * Converts a decimal string to a BigInt, scaling by the given number of decimals.
+   * * It is better to keep parseToBigInt strict, as its role is to ensure that a
+   * string is converted to a BigInt integer without any loss of precision.
    */
   private parseToBigInt(
     value: DecimalString,
     decimals: number,
     name: string,
   ): bigint {
+    // Basic validation of the decimal string format
     if (!/^\d+(\.\d+)?$/.test(value)) {
       throw new Error(`Invalid decimal string for ${name}`);
     }
 
     const [i, f = ''] = value.split('.');
-    if (f.length > decimals) {
-      throw new Error(`${name} has too many decimals`);
+
+    // Optimization: Remove trailing zeros that don't affect precision
+    // This prevents "too many decimals" errors for values like "1.500" with decimals: 1
+    const cleanF = f.replace(/0+$/, '');
+
+    if (cleanF.length > decimals) {
+      throw new Error(
+        `${name} has too many decimals (${f.length} > ${decimals}). ` +
+          `Value: ${value}. This would result in precision loss.`,
+      );
     }
 
+    // We use the original 'f' for padding to maintain the expected scale
     return BigInt(i + f.padEnd(decimals, '0'));
   }
 
@@ -57,10 +69,34 @@ export class DecimalUtilsService {
     decimals: number,
     name = 'value',
   ): DecimalString {
-    const a = this.parseToBigInt(value, decimals, name);
-    const b = this.parseToBigInt(multiplier, decimals, 'multiplier');
+    // 1. Détection de la précision native des entrées
+    const vDecs = value.includes('.') ? value.split('.')[1].length : 0;
+    const mDecs = multiplier.includes('.')
+      ? multiplier.split('.')[1].length
+      : 0;
 
-    const result = (a * b) / this.pow10(decimals);
+    // 2. Conversion en BigInt sans perte (on utilise leur précision réelle)
+    const a = this.parseToBigInt(value, vDecs, name);
+    const b = this.parseToBigInt(multiplier, mDecs, 'multiplier');
+
+    // 3. Produit brut (l'échelle combinée est vDecs + mDecs)
+    const product = a * b;
+    const currentScale = vDecs + mDecs;
+
+    // 4. Ajustement vers l'échelle de sortie (target decimals)
+    const scaleDiff = currentScale - decimals;
+
+    let result: bigint;
+    if (scaleDiff > 0) {
+      // Trop de décimales : on réduit (division)
+      // Note : BigInt fait une division entière (troncation)
+      result = product / this.pow10(scaleDiff);
+    } else if (scaleDiff < 0) {
+      // Pas assez de décimales : on augmente (multiplication)
+      result = product * this.pow10(Math.abs(scaleDiff));
+    } else {
+      result = product;
+    }
 
     return this.formatFromBigInt(result, decimals);
   }

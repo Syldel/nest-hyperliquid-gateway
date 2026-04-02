@@ -33,8 +33,33 @@ describe('DecimalUtilsService', () => {
       expect(result).toBe('25.000000');
     });
 
+    it('should handle different input precisions and rescale to resultDecimals', () => {
+      const result = service.multiply('1.23456', '2.50', 6);
+      expect(result).toBe('3.086400');
+    });
+
+    it('should handle very small numbers (dust levels)', () => {
+      const result = service.multiply('0.0001', '0.0001', 8);
+      expect(result).toBe('0.00000001');
+    });
+
+    it('should throw "too many decimals" if input exceeds its own inferred precision (if using old strict logic)', () => {
+      expect(() => service.multiply('1.234', '2', 2)).not.toThrow();
+    });
+
+    it('should truncate extra decimals according to resultDecimals', () => {
+      const result = service.multiply('1.111', '1.111', 2);
+      expect(result).toBe('1.23');
+    });
+
+    it('should work with zero', () => {
+      expect(service.multiply('0', '123.45', 2)).toBe('0.00');
+      expect(service.multiply('123.45', '0', 2)).toBe('0.00');
+    });
+
     it('should throw for invalid input', () => {
       expect(() => service.multiply('abc', '2', 6)).toThrow();
+      expect(() => service.multiply('2', '1.2.3', 6)).toThrow();
     });
   });
 

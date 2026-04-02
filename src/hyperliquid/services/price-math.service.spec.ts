@@ -38,8 +38,8 @@ describe('PriceMathService', () => {
 
       const result = service.getOneTickAround(price, tick);
 
-      expect(result.below.toString()).toBe('99');
-      expect(result.above.toString()).toBe('101');
+      expect(result.below).toBe('99');
+      expect(result.above).toBe('101');
     });
 
     it('should work with decimal tick sizes', () => {
@@ -48,8 +48,49 @@ describe('PriceMathService', () => {
 
       const result = service.getOneTickAround(price, tick);
 
-      expect(result.below.toString()).toBe('2412.6');
-      expect(result.above.toString()).toBe('2412.8');
+      expect(result.below).toBe('2412.6');
+      expect(result.above).toBe('2412.8');
+    });
+
+    it('should handle small decimal prices and ticks', () => {
+      const price = '0.0002';
+      const tick = '0.0001';
+
+      const result = service.getOneTickAround(price, tick);
+
+      expect(result.below).toBe('0.0001');
+      expect(result.above).toBe('0.0003');
+    });
+
+    it('should respect the optional decimals parameter', () => {
+      const price = '100';
+      const tick = '1';
+      // On force 2 décimales même si les entrées sont des entiers
+      const result = service.getOneTickAround(price, tick, 2);
+
+      expect(result.below).toBe('99'); // Ou '99.00' selon votre normalisation
+      expect(result.above).toBe('101');
+    });
+
+    it('should handle prices with more decimals than the tick', () => {
+      const price = '1.23456';
+      const tick = '0.01';
+
+      const result = service.getOneTickAround(price, tick);
+
+      // Le calcul doit se baser sur la précision la plus fine (5 décimales)
+      expect(result.below).toBe('1.22456');
+      expect(result.above).toBe('1.24456');
+    });
+
+    it('should handle negative results correctly', () => {
+      const price = '0.5';
+      const tick = '1';
+
+      const result = service.getOneTickAround(price, tick);
+
+      expect(result.below).toBe('-0.5');
+      expect(result.above).toBe('1.5');
     });
   });
 

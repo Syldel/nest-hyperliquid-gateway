@@ -70,6 +70,7 @@ export class SmartOrderService {
 
       const { below, above } = this.priceMath.getOneTickAroundPrice(
         market.markPrice,
+        market.szDecimals,
       );
       const price: DecimalString = isBuy ? below : above;
 
