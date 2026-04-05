@@ -1,10 +1,12 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 
 import { AppModule } from './app.module';
 import { ValidationExceptionFilter } from './filters/validation-exception.filter';
 
 async function bootstrap() {
+  const logger = new Logger('bootstrap');
+
   const isProduction = process.env.NODE_ENV === 'production';
 
   const app = await NestFactory.create(AppModule, {
@@ -47,7 +49,11 @@ async function bootstrap() {
   );
 
   app.useGlobalFilters(new ValidationExceptionFilter());
-  await app.listen(process.env.PORT ?? 3000);
+
+  const port = process.env.PORT ?? 3000;
+  await app.listen(port, '0.0.0.0');
+
+  logger.warn(`\uf427  App running on port ${port} (internal)`);
 }
 void bootstrap().catch((err) => {
   console.error('Bootstrap failed', err);

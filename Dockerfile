@@ -24,6 +24,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV PORT=3000
 
 # Dépendances prod uniquement
 COPY package*.json ./
@@ -38,6 +39,6 @@ RUN chown -R node:node /app
 # On bascule sur l'utilisateur node pour la sécurité
 USER node
 
-EXPOSE 3005
+EXPOSE 3000
 
 CMD ["node", "dist/main.js"]
