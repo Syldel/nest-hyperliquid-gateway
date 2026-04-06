@@ -69,7 +69,7 @@ async function bootstrap() {
   const port = process.env.PORT ?? 3000;
   await app.listen(port, '0.0.0.0');
 
-  logger.log(`\uf427  App running on port ${port} (internal)`);
+  logger.warn(`\uf427  App running on port ${port} (internal)`);
 }
 void bootstrap().catch((err) => {
   console.error('Bootstrap failed', err);
