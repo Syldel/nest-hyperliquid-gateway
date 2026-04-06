@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { LOG_LEVELS, Logger, LogLevel, ValidationPipe } from '@nestjs/common';
 
 import { AppModule } from './app.module';
 import { ValidationExceptionFilter } from './filters/validation-exception.filter';
@@ -9,11 +9,7 @@ async function bootstrap() {
 
   const isProduction = process.env.NODE_ENV === 'production';
 
-  const app = await NestFactory.create(AppModule, {
-    logger: isProduction
-      ? ['error', 'warn']
-      : ['log', 'debug', 'verbose', 'warn', 'error'],
-  });
+  const app = await NestFactory.create(AppModule, { logger });
 
   /* ********************************************** */
 
@@ -50,10 +46,30 @@ async function bootstrap() {
 
   app.useGlobalFilters(new ValidationExceptionFilter());
 
+  /* ********************************************** */
+
+  // Ex: LOG_LEVELS=error,warn,log,debug
+  const envLogLevels = process.env.LOG_LEVELS;
+
+  const defaultLevels: LogLevel[] = isProduction
+    ? ['error', 'warn']
+    : ['log', 'debug', 'warn', 'error', 'verbose'];
+
+  const levels: LogLevel[] = envLogLevels
+    ? envLogLevels
+        .split(',')
+        .map((item) => item.trim().toLowerCase() as LogLevel)
+        .filter((level) => LOG_LEVELS.includes(level))
+    : defaultLevels;
+
+  app.useLogger(levels.length > 0 ? levels : defaultLevels);
+
+  /* ********************************************** */
+
   const port = process.env.PORT ?? 3000;
   await app.listen(port, '0.0.0.0');
 
-  logger.warn(`\uf427  App running on port ${port} (internal)`);
+  logger.log(`\uf427  App running on port ${port} (internal)`);
 }
 void bootstrap().catch((err) => {
   console.error('Bootstrap failed', err);
