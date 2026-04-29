@@ -10,6 +10,8 @@ import {
   CandleSnapshotRequest,
   CandleSnapshot,
   CandleInterval,
+  HLPerpDex,
+  HLPerpDexsResponse,
 } from '@syldel/hl-shared-types';
 import { HyperliquidApiBaseInfoService } from './hyperliquid-api-base-info.service';
 
@@ -20,22 +22,53 @@ export class HyperliquidApiPublicInfoService extends HyperliquidApiBaseInfoServi
   // ---------------------------------------------------------------------------
 
   /**
-   * Récupère les métadonnées du marché perp.
+   * Retrieves all perpetual DEXs metadata.
+   * Filters out the null header returned by the Hyperliquid API.
    */
-  async getPerpMarketMeta(isTestnet: boolean = false): Promise<HLPerpMeta> {
-    return this.executeInfo<HLPerpMeta>({ type: 'meta' }, isTestnet);
+  async getAllPerpDexs(isTestnet: boolean = false): Promise<HLPerpDex[]> {
+    const rawData = await this.executeInfo<HLPerpDexsResponse>(
+      { type: 'perpDexs' },
+      isTestnet,
+    );
+
+    if (!Array.isArray(rawData)) {
+      return [];
+    }
+
+    return rawData.filter((item): item is HLPerpDex => item !== null);
   }
 
   /**
-   * Récupère la liste complète des markets perp.
-   * Quand on veut seulement les infos statiques du marché perp.
+   * Retrieves perpetual market metadata (universe and margin tables).
+   * @param dex Optional perp dex name (defaults to empty string for the main perp dex).
+   * @param isTestnet Optional flag for testnet.
+   */
+  async getPerpMarketMeta(
+    dex: string = '',
+    isTestnet: boolean = false,
+  ): Promise<HLPerpMeta> {
+    return this.executeInfo<HLPerpMeta>(
+      {
+        type: 'meta',
+        ...(dex ? { dex } : {}),
+      },
+      isTestnet,
+    );
+  }
+
+  /**
+   * Retrieves the complete list of perp markets (universe only).
+   * * @param meta - Optional already fetched HLPerpMeta object to avoid redundant API calls.
+   * @param dex - The perp dex name (defaults to empty string for the main dex).
+   * @param isTestnet - Optional flag for testnet environment.
    */
   async getPerpAssets(
-    meta: HLPerpMeta,
+    meta?: HLPerpMeta,
+    dex: string = '',
     isTestnet: boolean = false,
   ): Promise<HLPerpMarketUniverse[]> {
     if (!meta) {
-      meta = await this.getPerpMarketMeta(isTestnet);
+      meta = await this.getPerpMarketMeta(dex, isTestnet);
     }
 
     return meta.universe.map((asset, index) => ({

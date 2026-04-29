@@ -38,6 +38,15 @@ export class HyperliquidInfoController {
   }
 
   /**
+   * Retrieve all perpetual DEXs from Hyperliquid.
+   */
+  @Get('perp-dexs')
+  async getDexs(@Query('testnet') testnet?: string) {
+    const isTestnet = testnet === 'true';
+    return this.publicInfoService.getAllPerpDexs(isTestnet);
+  }
+
+  /**
    * Renvoie la metadata des marchés perp :
    * - universe (nom, decimals, leverage…)
    * - margin tables
@@ -46,9 +55,12 @@ export class HyperliquidInfoController {
    * (type: 'meta')
    */
   @Get('perp-meta')
-  async getPerpMarketMeta(@Query('testnet') testnet?: string) {
+  async getPerpMarketMeta(
+    @Query('dex') dex: string = '',
+    @Query('testnet') testnet?: string,
+  ) {
     const isTestnet = this.castTestnetFlag(testnet);
-    return await this.cache.ensurePerpMeta(isTestnet);
+    return await this.cache.ensurePerpMeta(dex, isTestnet);
   }
 
   /**
@@ -61,10 +73,13 @@ export class HyperliquidInfoController {
    * (type: 'meta' with mapped universe)
    */
   @Get('perp-assets')
-  async getPerpAssets(@Query('testnet') testnet?: string) {
+  async getPerpAssets(
+    @Query('dex') dex: string = '',
+    @Query('testnet') testnet?: string,
+  ) {
     const isTestnet = this.castTestnetFlag(testnet);
-    const meta = await this.cache.ensurePerpMeta(isTestnet);
-    return this.publicInfoService.getPerpAssets(meta, isTestnet);
+    const meta = await this.cache.ensurePerpMeta(dex, isTestnet);
+    return this.publicInfoService.getPerpAssets(meta, dex, isTestnet);
   }
 
   /**

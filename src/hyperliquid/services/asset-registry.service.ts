@@ -14,11 +14,11 @@ export class AssetRegistryService implements OnModuleInit {
   // === Reverse maps ===
   private assetIdToName = new Map<number, string>();
 
-  constructor(private readonly meta: MarketMetaCacheService) {}
+  constructor(private readonly metaCache: MarketMetaCacheService) {}
 
   async onModuleInit() {
     await this.refreshSymbols();
-    this.meta.onMetaUpdated$.subscribe(() => {
+    this.metaCache.onMetaUpdated$.subscribe(() => {
       this.logger.log('Meta refreshed — updating symbol maps...');
       this.refreshSymbols().catch((err) =>
         this.logger.error('Failed to refresh symbol maps', err),
@@ -29,20 +29,25 @@ export class AssetRegistryService implements OnModuleInit {
   /**
    * Refresh all symbol maps from Perp + Spot metadata.
    */
-  private async refreshSymbols() {
-    const perpMeta = await this.meta.ensurePerpMeta();
-    const spotMeta = await this.meta.ensureSpotMeta();
+  async refreshSymbols(testnet = false) {
+    const dexs = await this.metaCache.ensureDexs(testnet);
+    const spotMeta = await this.metaCache.ensureSpotMeta(testnet);
 
-    this.nameToAssetId.clear();
-    this.nameToSzDecimals.clear();
-    this.nameToSpotPairId.clear();
+    this.clearMaps();
 
-    this.buildPerpMaps(perpMeta);
     this.buildSpotMaps(spotMeta);
-    // this.buildBuilderDexMaps(spotMeta);
+
+    for (let i = 0; i < dexs.length; i++) {
+      const dexName = dexs[i]?.name || '';
+
+      const perpMeta = await this.metaCache.ensurePerpMeta(dexName, testnet);
+      this.buildPerpMaps(perpMeta, i);
+    }
+
+    this.buildBuilderDexMaps(spotMeta);
 
     this.logger.log(
-      `SymbolService updated: ${this.nameToAssetId.size} assets loaded.`,
+      `Registry synchronized: ${this.nameToAssetId.size} assets indexed across ${dexs.length} DEXs.`,
     );
   }
 
@@ -50,11 +55,19 @@ export class AssetRegistryService implements OnModuleInit {
   // PERPETUALS
   // --------------------------------------------------------
 
-  private buildPerpMaps(perpMetaData: HLPerpMeta) {
-    perpMetaData.universe.forEach((asset, index) => {
-      this.nameToAssetId.set(asset.name, index);
-      this.nameToSzDecimals.set(asset.name, asset.szDecimals);
-      this.assetIdToName.set(index, asset.name);
+  private buildPerpMaps(perpMetaData: HLPerpMeta, dexIndex: number) {
+    perpMetaData.universe.forEach((asset, indexInMeta) => {
+      let assetId: number;
+
+      if (dexIndex === 0) {
+        // Main DEX : ID = Index dans l'univers (0, 1, 2...)
+        assetId = indexInMeta;
+      } else {
+        // Builder DEX : 100000 + perp_dex_index * 10000 + index_in_meta
+        assetId = 100000 + dexIndex * 10000 + indexInMeta;
+      }
+
+      this.register(asset.name, assetId, asset.szDecimals);
     });
   }
 
@@ -63,50 +76,44 @@ export class AssetRegistryService implements OnModuleInit {
   // --------------------------------------------------------
 
   private buildSpotMaps(spotMetaData: HLSpotMeta): void {
-    const tokenMap = new Map<number, { name: string; szDecimals: number }>();
-    spotMetaData.tokens.forEach((token) => {
-      tokenMap.set(token.index, {
-        name: token.name,
-        szDecimals: token.szDecimals,
-      });
-    });
-
     spotMetaData.universe.forEach((market) => {
       if (market.tokens.length < 2) return;
-      const baseToken = tokenMap.get(market.tokens[0]);
-      const quoteToken = tokenMap.get(market.tokens[1]);
+
+      const baseToken = spotMetaData.tokens[market.tokens[0]];
+      const quoteToken = spotMetaData.tokens[market.tokens[1]];
       if (!baseToken || !quoteToken) return;
 
       // Hyperliquid réserve une plage d’IDs pour les marchés spot afin de ne pas les confondre avec les perps.
       const assetId = 10000 + market.index;
-      const baseQuoteKey = `${baseToken.name}/${quoteToken.name}`;
-      this.nameToAssetId.set(baseQuoteKey, assetId);
-      this.nameToSzDecimals.set(baseQuoteKey, baseToken.szDecimals);
-      this.nameToSpotPairId.set(baseQuoteKey, market.name);
-      this.assetIdToName.set(assetId, baseQuoteKey);
+      const pairName = `${baseToken.name}/${quoteToken.name}`;
+
+      this.register(pairName, assetId, baseToken.szDecimals);
+      this.nameToSpotPairId.set(pairName, market.name);
     });
   }
 
-  // --------------------------------------------------------
-  // BUILDER DEX
-  // --------------------------------------------------------
-  /**
-   * Builder Dex markets appear in Spot metadata under `tokens`,
-   * not under `universe`. Example HL API format:
-   *
-   *   tokens: [
-   *     { name: "test:ABC", assetId: 110000, szDecimals: 0 }
-   *   ]
-   */
-  //   private buildBuilderDexMaps(spotMeta: HLSpotMeta) {
-  //     for (const token of spotMeta.tokens) {
-  //       if (!token.name.includes(':')) continue; // not a builder token
+  private buildBuilderDexMaps(spotMeta: HLSpotMeta) {
+    for (const token of spotMeta.tokens) {
+      // Indexation des tokens builder isolés (assetId >= 100,000)
+      if (token.name.includes(':') || token.index >= 100_000) {
+        // Note: l'ID ici est souvent l'index du token directement pour le spot
+        this.register(token.name, token.index, token.szDecimals);
+      }
+    }
+  }
 
-  //       this.nameToAssetId.set(token.name, token.assetId);
-  //       this.nameToSzDecimals.set(token.name, token.szDecimals);
-  //       // no spot pair ID for builder assets
-  //     }
-  //   }
+  private register(name: string, id: number, szDecimals: number) {
+    this.nameToAssetId.set(name, id);
+    this.nameToSzDecimals.set(name, szDecimals);
+    this.assetIdToName.set(id, name);
+  }
+
+  private clearMaps() {
+    this.nameToAssetId.clear();
+    this.nameToSzDecimals.clear();
+    this.nameToSpotPairId.clear();
+    this.assetIdToName.clear();
+  }
 
   // --------------------------------------------------------
   // PUBLIC API
