@@ -13,6 +13,7 @@ export class AssetRegistryService implements OnModuleInit {
 
   // === Reverse maps ===
   private assetIdToName = new Map<number, string>();
+  private nameToDexName = new Map<string, string>();
 
   constructor(private readonly metaCache: MarketMetaCacheService) {}
 
@@ -41,7 +42,7 @@ export class AssetRegistryService implements OnModuleInit {
       const dexName = dexs[i]?.name || '';
 
       const perpMeta = await this.metaCache.ensurePerpMeta(dexName, testnet);
-      this.buildPerpMaps(perpMeta, i);
+      this.buildPerpMaps(perpMeta, i, dexName);
     }
 
     this.buildBuilderDexMaps(spotMeta);
@@ -55,7 +56,11 @@ export class AssetRegistryService implements OnModuleInit {
   // PERPETUALS
   // --------------------------------------------------------
 
-  private buildPerpMaps(perpMetaData: HLPerpMeta, dexIndex: number) {
+  private buildPerpMaps(
+    perpMetaData: HLPerpMeta,
+    dexIndex: number,
+    dexName: string,
+  ) {
     perpMetaData.universe.forEach((asset, indexInMeta) => {
       let assetId: number;
 
@@ -67,7 +72,7 @@ export class AssetRegistryService implements OnModuleInit {
         assetId = 100000 + dexIndex * 10000 + indexInMeta;
       }
 
-      this.register(asset.name, assetId, asset.szDecimals);
+      this.register(asset.name, assetId, asset.szDecimals, dexName);
     });
   }
 
@@ -102,10 +107,16 @@ export class AssetRegistryService implements OnModuleInit {
     }
   }
 
-  private register(name: string, id: number, szDecimals: number) {
+  private register(
+    name: string,
+    id: number,
+    szDecimals: number,
+    dexName: string = '',
+  ) {
     this.nameToAssetId.set(name, id);
     this.nameToSzDecimals.set(name, szDecimals);
     this.assetIdToName.set(id, name);
+    this.nameToDexName.set(name, dexName);
   }
 
   private clearMaps() {
@@ -113,6 +124,7 @@ export class AssetRegistryService implements OnModuleInit {
     this.nameToSzDecimals.clear();
     this.nameToSpotPairId.clear();
     this.assetIdToName.clear();
+    this.nameToDexName.clear();
   }
 
   // --------------------------------------------------------
@@ -133,6 +145,10 @@ export class AssetRegistryService implements OnModuleInit {
 
   getSpotPairId(name: string): string | undefined {
     return this.nameToSpotPairId.get(name);
+  }
+
+  getDexForAsset(assetName: string): string {
+    return this.nameToDexName.get(assetName) || '';
   }
 
   isSpot(name: string): boolean {

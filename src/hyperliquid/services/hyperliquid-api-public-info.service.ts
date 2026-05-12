@@ -139,11 +139,13 @@ export class HyperliquidApiPublicInfoService extends HyperliquidApiBaseInfoServi
    * - initialiser des stratégies de trading.
    */
   async getPerpMarketsWithPrices(
+    dex: string = '',
     isTestnet: boolean = false,
   ): Promise<HLPerpMarket[]> {
     const metaAndAssetCtxs = await this.executeInfo<HLPerpMetaAndCtx>(
       {
         type: 'metaAndAssetCtxs',
+        dex,
       },
       isTestnet,
     );

@@ -35,6 +35,7 @@ describe('SmartOrderService', () => {
   let getAssetId: jest.SpyInstance;
   let getSzDecimals: jest.SpyInstance;
   let isPerp: jest.SpyInstance;
+  let getDexForAsset: jest.SpyInstance;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -70,6 +71,7 @@ describe('SmartOrderService', () => {
             getAssetId: jest.fn(),
             getSzDecimals: jest.fn(),
             isPerp: jest.fn(),
+            getDexForAsset: jest.fn(),
           },
         },
         ValueFormatterService,
@@ -104,6 +106,7 @@ describe('SmartOrderService', () => {
     getAssetId = jest.spyOn(assetRegistry, 'getAssetId');
     getSzDecimals = jest.spyOn(assetRegistry, 'getSzDecimals');
     isPerp = jest.spyOn(assetRegistry, 'isPerp');
+    getDexForAsset = jest.spyOn(assetRegistry, 'getDexForAsset');
   });
 
   describe('instantOrder', () => {
@@ -450,6 +453,7 @@ describe('SmartOrderService', () => {
       getAssetId.mockReturnValue(0);
       getSzDecimals.mockReturnValue(6);
       isPerp.mockReturnValue(true);
+      getDexForAsset.mockReturnValue('');
     });
 
     it('should create new TP and SL orders and push correct oids', async () => {

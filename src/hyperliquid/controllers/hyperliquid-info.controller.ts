@@ -91,9 +91,12 @@ export class HyperliquidInfoController {
    * (type: 'metaAndAssetCtxs')
    */
   @Get('perp-markets')
-  async getPerpMarkets(@Query('testnet') testnet?: string) {
+  async getPerpMarkets(
+    @Query('dex') dex: string = '',
+    @Query('testnet') testnet?: string,
+  ) {
     const isTestnet = this.castTestnetFlag(testnet);
-    return this.publicInfoService.getPerpMarketsWithPrices(isTestnet);
+    return this.publicInfoService.getPerpMarketsWithPrices(dex, isTestnet);
   }
 
   // ---------------------------------------------------------------------------

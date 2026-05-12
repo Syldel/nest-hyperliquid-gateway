@@ -61,8 +61,11 @@ export class SmartOrderService {
     while (attempt < maxRetries) {
       attempt++;
 
-      const assets =
-        await this.publicInfoService.getPerpMarketsWithPrices(isTestnet);
+      const dex = this.assetRegistry.getDexForAsset(assetName);
+      const assets = await this.publicInfoService.getPerpMarketsWithPrices(
+        dex,
+        isTestnet,
+      );
       const market = assets.find((a) => a.name === assetName);
       if (!market || !market.markPrice) {
         throw new Error(`Invalid market data for ${assetName}`);
