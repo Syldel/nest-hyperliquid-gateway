@@ -4,7 +4,6 @@ import {
   HLSpotMeta,
   HLPerpMarketUniverse,
   HLSpotAssetSummary,
-  HLPerpMarket,
   HLPerpMetaAndCtx,
   HLPerpAssetCtx,
   CandleSnapshotRequest,
@@ -12,6 +11,7 @@ import {
   CandleInterval,
   HLPerpDex,
   HLPerpDexsResponse,
+  HLPerpMarketExtended,
 } from '@syldel/hl-shared-types';
 import { HyperliquidApiBaseInfoService } from './hyperliquid-api-base-info.service';
 
@@ -141,7 +141,7 @@ export class HyperliquidApiPublicInfoService extends HyperliquidApiBaseInfoServi
   async getPerpMarketsWithPrices(
     dex: string = '',
     isTestnet: boolean = false,
-  ): Promise<HLPerpMarket[]> {
+  ): Promise<HLPerpMarketExtended[]> {
     const metaAndAssetCtxs = await this.executeInfo<HLPerpMetaAndCtx>(
       {
         type: 'metaAndAssetCtxs',
@@ -153,20 +153,53 @@ export class HyperliquidApiPublicInfoService extends HyperliquidApiBaseInfoServi
     return this.buildMarkets(metaAndAssetCtxs);
   }
 
-  private buildMarkets(metaAndCtx: HLPerpMetaAndCtx): HLPerpMarket[] {
+  private buildMarkets(metaAndCtx: HLPerpMetaAndCtx): HLPerpMarketExtended[] {
     const [meta, ctxs] = metaAndCtx;
+
+    const toNumber = (v?: string | null): number | undefined =>
+      v != null ? Number(v) : undefined;
 
     let ctx: HLPerpAssetCtx;
     return meta.universe.map((market, idx) => {
       ctx = ctxs[idx];
 
+      const midPrice = toNumber(ctx?.midPx);
+      const impactBidPrice = toNumber(ctx?.impactPxs?.[0]);
+      const impactAskPrice = toNumber(ctx?.impactPxs?.[1]);
+
+      // ===== DERIVED ONLY (no strategy logic) =====
+      let estimatedSpreadBps: number | undefined;
+
+      if (
+        impactBidPrice != null &&
+        impactAskPrice != null &&
+        midPrice != null &&
+        midPrice > 0
+      ) {
+        estimatedSpreadBps =
+          ((impactAskPrice - impactBidPrice) / midPrice) * 10000;
+      }
+
       return {
         index: idx,
         ...market,
+
+        // ===== RAW NORMALIZED =====
         markPrice: ctx?.markPx,
         midPrice: ctx?.midPx,
         funding: ctx?.funding,
         openInterest: ctx?.openInterest,
+
+        oraclePrice: ctx?.oraclePx,
+        premium: ctx?.premium,
+        dayNotionalVolume: ctx?.dayNtlVlm,
+        prevDayPrice: ctx?.prevDayPx,
+
+        impactBidPrice: ctx?.impactPxs?.[0],
+        impactAskPrice: ctx?.impactPxs?.[1],
+
+        // ===== DERIVED (gateway-safe) =====
+        estimatedSpreadBps,
       };
     });
   }
