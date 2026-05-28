@@ -90,6 +90,7 @@ export class SmartOrderService {
       } else {
         const quoteValue = await this.resolveQuoteFromPercent({
           percent: size.percent,
+          dex,
           isTestnet,
         });
         sz = this.usdcToSize(quoteValue, price, market.szDecimals);
@@ -203,9 +204,10 @@ export class SmartOrderService {
 
   async resolveQuoteFromPercent(params: {
     percent: DecimalString;
+    dex?: string;
     isTestnet?: boolean;
   }): Promise<DecimalString> {
-    const { percent, isTestnet = false } = params;
+    const { percent, dex, isTestnet = false } = params;
 
     const pctValue = this.decimalUtils.parse(percent);
     if (pctValue <= 0 || pctValue > 1) {
@@ -215,8 +217,10 @@ export class SmartOrderService {
       });
     }
 
-    const perpState =
-      await this.privateInfoService.getPerpAccountState(isTestnet);
+    const perpState = await this.privateInfoService.getPerpAccountState({
+      dex,
+      isTestnet,
+    });
     const accountValue = perpState.marginSummary.accountValue;
 
     if (!this.decimalUtils.isPositive(accountValue)) {

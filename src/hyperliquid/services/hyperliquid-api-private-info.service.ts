@@ -25,15 +25,21 @@ export class HyperliquidApiPrivateInfoService extends HyperliquidApiBaseInfoServ
   // ---------------------------------------------------------------------------
 
   /**
-   * Récupère l'état du compte perpétuel.
+   * Récupère l'état du compte perpétuel pour un DEX spécifique.
    */
   async getPerpAccountState(
-    isTestnet: boolean = false,
+    params: {
+      isTestnet?: boolean;
+      dex?: string;
+    } = {},
   ): Promise<HLClearinghouseState> {
+    const { isTestnet = false, dex } = params;
+
     return this.executeInfo<HLClearinghouseState>(
       {
         type: 'clearinghouseState',
         user: this.userContext.walletAddress,
+        ...(dex && { dex }),
       },
       isTestnet,
     );

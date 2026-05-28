@@ -32,9 +32,12 @@ export class HyperliquidInfoController {
    */
   @Get('perp-account')
   @UseGuards(UserAuthGuard)
-  async getPerpAccountState(@Query('testnet') testnet?: string) {
+  async getPerpAccountState(
+    @Query('dex') dex?: string,
+    @Query('testnet') testnet?: string,
+  ) {
     const isTestnet = this.castTestnetFlag(testnet);
-    return this.privateInfoService.getPerpAccountState(isTestnet);
+    return this.privateInfoService.getPerpAccountState({ dex, isTestnet });
   }
 
   /**
