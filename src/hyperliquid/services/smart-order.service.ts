@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpStatus,
   Injectable,
   Logger,
 } from '@nestjs/common';
@@ -30,6 +31,7 @@ import { DecimalUtilsService } from '../utils/decimal-utils.service';
 import { PriceMathService } from './price-math.service';
 import { AssetRegistryService } from './asset-registry.service';
 import { ValueFormatterService } from './value-formatter.service';
+import { HyperliquidGatewayException } from '../exceptions/hyperliquid-gateway.exception';
 
 @Injectable()
 export class SmartOrderService {
@@ -68,7 +70,10 @@ export class SmartOrderService {
       );
       const market = assets.find((a) => a.name === assetName);
       if (!market || !market.markPrice) {
-        throw new Error(`Invalid market data for ${assetName}`);
+        throw new HyperliquidGatewayException(
+          'INVALID_MARKET_DATA',
+          `Invalid market data or mark price for ${assetName}`,
+        );
       }
 
       const { below, above } = this.priceMath.getOneTickAroundPrice(
@@ -130,7 +135,11 @@ export class SmartOrderService {
         const poStatus = order.response.data.statuses[0];
         const oid = poStatus.resting?.oid || poStatus.filled?.oid;
         if (!oid) {
-          throw new Error('Instant order oid undefined');
+          throw new HyperliquidGatewayException(
+            'EXCHANGE_MALFORMED_RESPONSE',
+            'Instant order executed but OID (Order ID) is undefined in exchange response',
+            HttpStatus.BAD_GATEWAY,
+          );
         }
 
         const { finalStatus, raw, timedOut } =
@@ -211,7 +220,11 @@ export class SmartOrderService {
     const accountValue = perpState.marginSummary.accountValue;
 
     if (!this.decimalUtils.isPositive(accountValue)) {
-      throw new Error('No USDC collateral available');
+      throw new HyperliquidGatewayException(
+        'INSUFFICIENT_COLLATERAL',
+        'No USDC collateral available on Hyperliquid account',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
     }
 
     const usdcToUse = this.decimalUtils.multiply(
@@ -222,7 +235,11 @@ export class SmartOrderService {
     );
 
     if (!this.decimalUtils.isPositive(usdcToUse)) {
-      throw new Error('Computed USDC amount is zero');
+      throw new HyperliquidGatewayException(
+        'COMPUTED_AMOUNT_ZERO',
+        'Computed USDC amount for the order size is zero or negative',
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
     }
 
     return this.decimalUtils.format(this.decimalUtils.parse(usdcToUse), 6);
@@ -394,14 +411,22 @@ export class SmartOrderService {
 
     const statuses = response.response.data.statuses;
     if (!statuses || statuses.length === 0) {
-      throw new Error('No order status returned from Hyperliquid');
+      throw new HyperliquidGatewayException(
+        'EXCHANGE_EMPTY_RESPONSE',
+        'No order status returned from Hyperliquid API',
+        HttpStatus.BAD_GATEWAY,
+      );
     }
 
     const status = statuses[0];
 
     if ('error' in status) {
       const code = this.mapOrderErrorToCode(status.error);
-      throw new Error(`${code}: ${status.error}`);
+      throw new HyperliquidGatewayException(
+        `EXCHANGE_ERROR_${code.toUpperCase()}`,
+        `Hyperliquid execution error: ${status.error}`,
+        HttpStatus.BAD_GATEWAY,
+      );
     }
 
     // ordre placé avec succès (resting ou filled)
@@ -575,7 +600,10 @@ export class SmartOrderService {
 
     const assetId = this.assetRegistry.getAssetId(assetName);
     if (assetId === undefined) {
-      throw new Error(`Unknown asset: ${assetName}`);
+      throw new HyperliquidGatewayException(
+        'UNKNOWN_ASSET',
+        `Unknown asset: ${assetName}`,
+      );
     }
 
     // injecte le kind pour TP et SL
