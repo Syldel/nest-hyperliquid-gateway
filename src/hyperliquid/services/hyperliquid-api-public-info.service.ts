@@ -12,6 +12,9 @@ import {
   HLPerpDex,
   HLPerpDexsResponse,
   HLPerpMarketExtended,
+  HLL2BookResponse,
+  HLNSigFigsOptions,
+  HLMantissaOptions,
 } from '@syldel/hl-shared-types';
 import { HyperliquidApiBaseInfoService } from './hyperliquid-api-base-info.service';
 
@@ -234,5 +237,34 @@ export class HyperliquidApiPublicInfoService extends HyperliquidApiBaseInfoServi
     };
 
     return this.executeInfo<CandleSnapshot[]>(body);
+  }
+
+  /**
+   * Récupère le snapshot du carnet d'ordres L2 pour un actif donné.
+   * @param req - Objet contenant les paramètres de la requête :
+   * - `coin`: Le nom du token (ex: "BTC")
+   * - `nSigFigs`: (Optionnel) Agrégation des niveaux (2, 3, 4, 5, null)
+   * - `mantissa`: (Optionnel) Autorisé uniquement si nSigFigs = 5 (1, 2, 5)
+   * @returns Un objet `HLL2BookResponse` contenant les bids et les asks.
+   */
+  async getL2BookSnapshot(req: {
+    coin: string;
+    nSigFigs?: HLNSigFigsOptions;
+    mantissa?: HLMantissaOptions;
+  }): Promise<HLL2BookResponse> {
+    const body: Record<string, any> = {
+      type: 'l2Book',
+      coin: req.coin,
+    };
+
+    if (req.nSigFigs !== undefined) {
+      body.nSigFigs = req.nSigFigs;
+    }
+
+    if (req.mantissa !== undefined) {
+      body.mantissa = req.mantissa;
+    }
+
+    return this.executeInfo<HLL2BookResponse>(body);
   }
 }

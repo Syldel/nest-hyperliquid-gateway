@@ -2,7 +2,10 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { HyperliquidApiPrivateInfoService } from '../services/hyperliquid-api-private-info.service';
 import { HyperliquidApiPublicInfoService } from '../services/hyperliquid-api-public-info.service';
 import { MarketMetaCacheService } from '../services/market-meta-cache.service';
-import { GetCandlesQueryDto } from '../dtos/hyperliquid-info.query.dto';
+import {
+  GetCandlesQueryDto,
+  GetL2BookQueryDto,
+} from '../dtos/hyperliquid-info.query.dto';
 import { UserAuthGuard } from '../../common/guards/user-auth.guard';
 
 @Controller('hyperliquid/info')
@@ -156,6 +159,14 @@ export class HyperliquidInfoController {
   @Get('candles')
   async getCandles(@Query() query: GetCandlesQueryDto) {
     return this.publicInfoService.getCandleSnapshot(query);
+  }
+
+  /**
+   * Récupère le snapshot du carnet d'ordres L2 (max 20 niveaux par côté)
+   */
+  @Get('l2-book')
+  async getL2Book(@Query() query: GetL2BookQueryDto) {
+    return this.publicInfoService.getL2BookSnapshot(query);
   }
 
   /**
