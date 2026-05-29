@@ -150,9 +150,18 @@ export class SmartOrderService {
           });
 
         if (timedOut && finalStatus === 'open') {
+          const assetId = this.assetRegistry.getAssetId(assetName);
+          if (assetId === undefined) {
+            throw new HyperliquidGatewayException(
+              'REGISTRY_ASSET_NOT_FOUND',
+              `Cannot cancel order: asset ${assetName} was not found in the asset registry.`,
+              HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+          }
+
           // ordre toujours ouvert → on cancel
           const cancelResult = await this.tradeService.cancelOrder(
-            [{ asset: market.index, oid }],
+            [{ asset: assetId, oid }],
             isTestnet,
           );
 
