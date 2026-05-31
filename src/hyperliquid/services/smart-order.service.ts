@@ -47,11 +47,12 @@ export class SmartOrderService {
     private readonly formatter: ValueFormatterService,
   ) {}
 
-  async instantOrder(params: InstantOrderParams) {
+  async instantOrder(params: InstantOrderParams): Promise<HLOrderStatusData> {
     const {
       assetName,
       isBuy,
       size,
+      tif = 'Alo',
       reduceOnly = false,
       isTestnet = false,
       maxRetries = 6,
@@ -116,7 +117,7 @@ export class SmartOrderService {
         limitPx: price.toString(),
         reduceOnly,
         orderType: {
-          limit: { tif: 'Alo' },
+          limit: { tif },
         },
       };
       this.logger.log(`Place order: ${JSON.stringify(oParams)}`);
@@ -263,8 +264,13 @@ export class SmartOrderService {
 
     if (msg.includes('minimum value')) return 'ORDER_MIN_VALUE';
     if (msg.includes('insufficient margin')) return 'INSUFFICIENT_MARGIN';
-    if (msg.includes('post only')) return 'POST_ONLY_REJECTED';
-    if (msg.includes('ioc')) return 'IOC_REJECTED';
+
+    if (msg.includes('post only') || msg.includes('post-only')) {
+      return 'POST_ONLY_REJECTED';
+    }
+    if (msg.includes('ioc') || msg.includes('could not immediately match')) {
+      return 'IOC_REJECTED';
+    }
     if (msg.includes('trigger')) return 'BAD_TRIGGER_PRICE';
 
     return 'INSTANT_ORDER_FAILED';

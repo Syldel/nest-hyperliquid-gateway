@@ -17,6 +17,7 @@ export class InstantOrderController {
       isBuy: dto.isBuy,
       size: this.mapOrderSize(dto.size),
       reduceOnly: dto.reduceOnly ?? false,
+      tif: dto.tif ?? 'Alo',
       isTestnet: dto.isTestnet,
       maxRetries: dto.maxRetries,
       delayMs: dto.delayMs,

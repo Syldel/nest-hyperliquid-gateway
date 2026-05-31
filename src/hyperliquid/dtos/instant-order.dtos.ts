@@ -9,6 +9,7 @@ import {
   IsDefined,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
+import type { HLTif } from '@syldel/hl-shared-types';
 
 export class OrderSizeDto {
   @IsIn(['base', 'quote', 'percent'])
@@ -39,6 +40,10 @@ export class InstantOrderDto {
   @ValidateNested()
   @Type(() => OrderSizeDto)
   size: OrderSizeDto;
+
+  @IsOptional()
+  @IsIn(['Gtc', 'Ioc', 'Alo'])
+  tif?: HLTif;
 
   @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')
