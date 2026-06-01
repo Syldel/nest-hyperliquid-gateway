@@ -16,8 +16,10 @@ import {
   HLOrderDetails,
   HLOrderStatusData,
   HLOrderStatusResponse,
+  HLPerpMarketExtended,
   HLPlaceOrderResponse,
   HLProtectiveKind,
+  HLTif,
   InstantOrderParams,
   NormalizedProtectiveOrder,
   ProtectiveOrderParams,
@@ -44,8 +46,60 @@ export class SmartOrderService {
     private readonly decimalUtils: DecimalUtilsService,
     private readonly priceMath: PriceMathService,
     private readonly assetRegistry: AssetRegistryService,
-    private readonly formatter: ValueFormatterService,
+    private readonly valueFormatter: ValueFormatterService,
   ) {}
+
+  private prepareOrderPrice(
+    market: HLPerpMarketExtended,
+    isBuy: boolean,
+    tif: HLTif,
+    params: { slippageTolerance?: number } = {},
+  ): DecimalString {
+    if (!market.markPrice) {
+      throw new HyperliquidGatewayException(
+        'INVALID_MARKET_DATA',
+        `Missing mark price for asset ${market.name} during price preparation.`,
+      );
+    }
+
+    const markPrice = market.markPrice;
+
+    const { below, above } = this.priceMath.getOneTickAroundPrice(
+      markPrice,
+      market.szDecimals,
+    );
+
+    let price: DecimalString;
+
+    if (tif === 'Alo') {
+      // MODE PASSIF : On s'écarte du marché pour s'assurer d'être Maker
+      price = isBuy ? below : above;
+    } else if (tif === 'Ioc') {
+      // MODE AGRESSIF (Protection Slippage) : On accepte de payer un peu plus cher
+      // pour mordre dans le carnet (Taker) tout en fixant une limite stricte.
+      const slippagePercent = params.slippageTolerance ?? 0.002;
+      const markNum = Number(market.markPrice);
+
+      // Si Buy : on est prêt à payer jusqu'à +0.2% au-dessus du markPrice
+      // Si Sell : on accepte de vendre jusqu'à -0.2% en dessous du markPrice
+      const rawLimitPrice = isBuy
+        ? markNum * (1 + slippagePercent)
+        : markNum * (1 - slippagePercent);
+
+      const isPerp = this.assetRegistry.isPerp(market.name);
+
+      // Règle (6 - szDecimals) et des 5 chiffres significatifs
+      price = this.valueFormatter.formatPrice(
+        rawLimitPrice,
+        market.szDecimals,
+        isPerp ? 'perp' : 'spot',
+      );
+    } else {
+      price = market.markPrice;
+    }
+
+    return price;
+  }
 
   async instantOrder(params: InstantOrderParams): Promise<HLOrderStatusData> {
     const {
@@ -77,11 +131,7 @@ export class SmartOrderService {
         );
       }
 
-      const { below, above } = this.priceMath.getOneTickAroundPrice(
-        market.markPrice,
-        market.szDecimals,
-      );
-      const price: DecimalString = isBuy ? below : above;
+      const price = this.prepareOrderPrice(market, isBuy, tif);
 
       let sz: DecimalString;
       if (size.type === 'base') {
@@ -555,12 +605,12 @@ export class SmartOrderService {
 
     return {
       kind: ot.trigger.tpsl,
-      price: this.formatter.formatPrice(
+      price: this.valueFormatter.formatPrice(
         ot.trigger.triggerPx,
         szDecimals,
         isPerp ? 'perp' : 'spot',
       ),
-      sz: this.formatter.formatSize(m.order.sz, szDecimals),
+      sz: this.valueFormatter.formatSize(m.order.sz, szDecimals),
       isMarket: ot.trigger.isMarket,
     };
   }
