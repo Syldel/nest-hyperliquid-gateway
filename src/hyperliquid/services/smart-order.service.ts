@@ -231,11 +231,22 @@ export class SmartOrderService {
             );
           }
 
-          const lastStatus = await this.privateInfoService.getOrderStatus(
-            oid,
-            isTestnet,
-          );
-          return lastStatus?.order;
+          const lastStatus = await this.privateInfoService
+            .getOrderStatus(oid, isTestnet)
+            .catch(() => null);
+
+          if (!lastStatus?.order) {
+            this.logger.error(
+              `[CRITICAL] Order ${oid} state is UNKNOWN. Cancel did not return success and fetch failed.`,
+            );
+            throw new HyperliquidGatewayException(
+              'UNKNOWN_ORDER_STATE',
+              `CRITICAL: Order ${oid} timed out, cancel status unclear, and final fetch failed. Halting bot to prevent ghost positions.`,
+              HttpStatus.INTERNAL_SERVER_ERROR,
+            );
+          }
+
+          return lastStatus.order;
         } else if (finalStatus === 'filled' || finalStatus === 'triggered') {
           // this.logger.log(`Order ${oid} executed successfully`);
         } else {
@@ -691,9 +702,11 @@ export class SmartOrderService {
       sl: { cancelled: [], created: [], updated: [] },
     };
 
+    const dex = this.assetRegistry.getDexForAsset(assetName);
+
     // 1️⃣ Fetch existing protective orders
     const openOrders = await this.privateInfoService.getFrontendOpenOrders(
-      '',
+      dex,
       isTestnet,
     );
 
