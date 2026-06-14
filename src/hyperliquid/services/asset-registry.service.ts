@@ -80,6 +80,12 @@ export class AssetRegistryService implements OnModuleInit {
   // SPOT
   // --------------------------------------------------------
 
+  HYPERUNIT_TOKENS = new Set(['UBTC', 'UETH', 'USOL']);
+
+  /**
+   * Registre de mapping pour les marchés au comptant (Spot).
+   * Applique une exception de nommage sémantique exclusivement pour les jetons de la couche Hyperunit.
+   */
   private buildSpotMaps(spotMetaData: HLSpotMeta): void {
     spotMetaData.universe.forEach((market) => {
       if (market.tokens.length < 2) return;
@@ -88,12 +94,52 @@ export class AssetRegistryService implements OnModuleInit {
       const quoteToken = spotMetaData.tokens[market.tokens[1]];
       if (!baseToken || !quoteToken) return;
 
-      // Hyperliquid réserve une plage d’IDs pour les marchés spot afin de ne pas les confondre avec les perps.
+      // 1. Calcul de l'ID d'Asset Spot protocolaire (10000 + index)
       const assetId = 10000 + market.index;
-      const pairName = `${baseToken.name}/${quoteToken.name}`;
 
-      this.register(pairName, assetId, baseToken.szDecimals);
-      this.nameToSpotPairId.set(pairName, market.name);
+      // 2. Détermination du nom protocolaire EXACT (ex: "PURR/USDC", "@1", "@107")
+      const protocolCoinName =
+        market.index === 0 ? 'PURR/USDC' : `@${market.index}`;
+
+      // 3. Récupération du nom L1 brut renvoyé par HyperCore (ex: "UBTC", "UETH", "USOL")
+      const l1BaseName = baseToken.name;
+      const quoteName = quoteToken.name;
+
+      const officialPairName = `${l1BaseName}/${quoteName}`; // ex: "UBTC/USDC"
+
+      // --- ENREGISTREMENT 1 : Format Index Protocole (ex: "@1") ---
+      this.register(protocolCoinName, assetId, baseToken.szDecimals);
+      this.nameToSpotPairId.set(protocolCoinName, market.name);
+
+      // --- ENREGISTREMENT 2 : Format L1 Officiel (ex: "UBTC/USDC") ---
+      if (officialPairName !== protocolCoinName) {
+        this.register(officialPairName, assetId, baseToken.szDecimals);
+        this.nameToSpotPairId.set(officialPairName, market.name);
+      }
+
+      // --- ENREGISTREMENT 3 : Exception chirurgicale Hyperunit (ex: "BTC/USDC") ---
+      // On n'applique le remapping que si le jeton fait explicitement partie du Set Hyperunit
+      if (this.HYPERUNIT_TOKENS.has(l1BaseName)) {
+        // On retire le "U" pour obtenir le nom humain conventionnel
+        const cleanBaseName = l1BaseName.substring(1);
+        const humanPairName = `${cleanBaseName}/${quoteName}`; // ex: "BTC/USDC", "ETH/USDC", "SOL/USDC"
+
+        if (
+          humanPairName !== officialPairName &&
+          humanPairName !== protocolCoinName
+        ) {
+          this.register(humanPairName, assetId, baseToken.szDecimals);
+          this.nameToSpotPairId.set(humanPairName, market.name);
+        }
+
+        // this.logger.debug(
+        //   `[Hyperunit Exception] Remapped ${officialPairName} to human alias: "${humanPairName}" (AssetID: ${assetId})`,
+        // );
+      } else {
+        // this.logger.debug(
+        //   `[Spot Registry] Indexed Standard Asset ${assetId} | Protocol: "${protocolCoinName}" | L1: "${officialPairName}"`,
+        // );
+      }
     });
   }
 

@@ -1,4 +1,11 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  NotFoundException,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { HyperliquidApiPrivateInfoService } from '../services/hyperliquid-api-private-info.service';
 import { HyperliquidApiPublicInfoService } from '../services/hyperliquid-api-public-info.service';
 import { MarketMetaCacheService } from '../services/market-meta-cache.service';
@@ -7,6 +14,7 @@ import {
   GetL2BookQueryDto,
 } from '../dtos/hyperliquid-info.query.dto';
 import { UserAuthGuard } from '../../common/guards/user-auth.guard';
+import { AssetRegistryService } from '../services/asset-registry.service';
 
 @Controller('hyperliquid/info')
 export class HyperliquidInfoController {
@@ -14,6 +22,7 @@ export class HyperliquidInfoController {
     private readonly privateInfoService: HyperliquidApiPrivateInfoService,
     private readonly publicInfoService: HyperliquidApiPublicInfoService,
     private readonly cache: MarketMetaCacheService,
+    private readonly assetRegistryService: AssetRegistryService,
   ) {}
 
   /**
@@ -176,5 +185,36 @@ export class HyperliquidInfoController {
   @UseGuards(UserAuthGuard)
   async getPortfolio() {
     return this.privateInfoService.getUserPortfolio();
+  }
+
+  /**
+   * Récupère l'ID numérique interne (Asset ID) d'un actif Hyperliquid à partir de son nom.
+   * * @description
+   * Cet endpoint interroge le registre local synchronisé pour convertir un nom de paire
+   * (Perp standard, Builder DEX ou Spot) en son identifiant entier requis par les actions
+   * d'échange (`order` et `cancel`).
+   *
+   * @param {string} name - Le nom unique du symbole ou de la paire (ex: "BTC", "PURR/USDC").
+   * @returns {Promise<{ assetId: number }>} Un objet contenant l'ID numérique de l'actif.
+   * * @throws {BadRequestException} Si le paramètre de requête `name` est manquant ou vide.
+   * @throws {NotFoundException} Si le symbole n'est pas indexé dans le registre.
+   * * @example
+   * // Requête : GET /hyperliquid/info/asset-id?name=BTC
+   * // Réponse : { "assetId": 0 }
+   */
+  @Get('asset-id')
+  getAssetId(@Query('name') name: string): Promise<{ assetId: number }> {
+    if (!name) {
+      throw new BadRequestException('Query parameter "name" is required');
+    }
+
+    const assetId = this.assetRegistryService.getAssetId(name);
+    if (assetId === undefined) {
+      throw new NotFoundException(
+        `Asset "${name}" not found. Ensure refreshSymbols() has been executed.`,
+      );
+    }
+
+    return Promise.resolve({ assetId });
   }
 }
