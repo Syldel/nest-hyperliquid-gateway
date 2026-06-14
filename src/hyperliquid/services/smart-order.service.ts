@@ -733,7 +733,7 @@ export class SmartOrderService {
     existing.forEach((o) => {
       openOrder = openOrders.find((r) => r.oid === o.oid);
       this.logger.log(
-        `Open Order ${assetName}: ${o.oid} [${o.kind}] ${openOrder ? (openOrder.side === 'B' ? 'BUY' : 'SELL') : '?'} ${o.sz} @ ${o.price}`,
+        `Existing open order [${assetName}]: ${o.oid} [${o.kind}] ${openOrder ? (openOrder.side === 'B' ? 'BUY' : 'SELL') : '?'} ${o.sz} @ ${o.price}`,
       );
     });
 
@@ -808,6 +808,36 @@ export class SmartOrderService {
             this.logger.error(
               `Failed to modify order ${m.oid}: ${status.error}`,
             );
+
+            // Fallback: Try to cancel the existing order and recreate it
+            const isTp = tpDiff.modifies.some((tpM) => tpM.oid === m.oid);
+            const currentOrder = m;
+
+            if (isTp) {
+              // --- Gestion du Take Profit (TP) ---
+              tpDiff.cancels.push(currentOrder.oid);
+
+              const normalizedTp = this.normalizeModifyInput(currentOrder);
+              if (normalizedTp !== null) {
+                tpDiff.creates.push(normalizedTp);
+              } else {
+                this.logger.warn(
+                  `Failed to normalize TP order for fallback creation (OID: ${currentOrder.oid})`,
+                );
+              }
+            } else {
+              // --- Gestion du Stop Loss (SL) ---
+              slDiff.cancels.push(currentOrder.oid);
+
+              const normalizedSl = this.normalizeModifyInput(currentOrder);
+              if (normalizedSl !== null) {
+                slDiff.creates.push(normalizedSl);
+              } else {
+                this.logger.warn(
+                  `Failed to normalize SL order for fallback creation (OID: ${currentOrder.oid})`,
+                );
+              }
+            }
           }
         });
       }
