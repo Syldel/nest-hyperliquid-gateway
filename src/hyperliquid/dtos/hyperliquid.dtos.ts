@@ -8,6 +8,7 @@ import {
   IsIn,
   IsHexadecimal,
   Length,
+  IsNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -31,11 +32,21 @@ export class PlaceOrderDto {
   isTestnet: boolean = false;
 }
 
+export class CancelItemDto {
+  @IsNumber()
+  @IsNotEmpty()
+  asset: number;
+
+  @IsNumber()
+  @IsNotEmpty()
+  oid: number;
+}
+
 export class CancelOrderDto {
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => Object)
-  cancels: Array<{ asset: number; oid: number }>;
+  @Type(() => CancelItemDto)
+  cancels: CancelItemDto[];
 
   @IsBoolean()
   @IsOptional()
