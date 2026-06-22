@@ -14,23 +14,30 @@ async function bootstrap() {
   /* ********************************************** */
 
   // INFO: Avec origin: '*', il faut normalement mettre => credentials: false
-  let origin: string | string[];
-  if (isProduction) {
-    const allowed = process.env.ALLOWED_ORIGINS;
-
-    if (!allowed) {
-      throw new Error(
-        'ALLOWED_ORIGINS must be defined in production environment',
-      );
-    }
-
-    origin = allowed.split(',').map((o) => o.trim());
-  } else {
-    origin = ['http://localhost:3000', 'http://localhost:3001'];
-  }
+  const allowedOrigins: string[] = isProduction
+    ? (process.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()) ?? [])
+    : ['http://localhost:3000', 'http://localhost:3001'];
 
   app.enableCors({
-    origin,
+    origin: (
+      requestOrigin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ): void => {
+      // curl, Postman, health checks, etc.
+      if (!requestOrigin) {
+        callback(null, true);
+        return;
+      }
+
+      const isAllowed = allowedOrigins.includes(requestOrigin);
+      if (!isAllowed) {
+        logger.debug(
+          `Origin "${requestOrigin}" ${isAllowed ? 'allowed' : 'rejected'}`,
+        );
+      }
+
+      callback(null, isAllowed);
+    },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
