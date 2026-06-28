@@ -75,3 +75,9 @@ export class GetUserPortfolioQueryDto {
   @IsOptional()
   user?: HexString;
 }
+
+export class GetActiveAssetDataQueryDto {
+  @IsNotEmpty()
+  @IsString()
+  coin!: string;
+}

@@ -10,11 +10,13 @@ import { HyperliquidApiPrivateInfoService } from '../services/hyperliquid-api-pr
 import { HyperliquidApiPublicInfoService } from '../services/hyperliquid-api-public-info.service';
 import { MarketMetaCacheService } from '../services/market-meta-cache.service';
 import {
+  GetActiveAssetDataQueryDto,
   GetCandlesQueryDto,
   GetL2BookQueryDto,
 } from '../dtos/hyperliquid-info.query.dto';
 import { UserAuthGuard } from '../../common/guards/user-auth.guard';
 import { AssetRegistryService } from '../services/asset-registry.service';
+import { HlActiveAssetData } from '@syldel/hl-shared-types';
 
 @Controller('hyperliquid/info')
 export class HyperliquidInfoController {
@@ -185,6 +187,17 @@ export class HyperliquidInfoController {
   @UseGuards(UserAuthGuard)
   async getPortfolio() {
     return this.privateInfoService.getUserPortfolio();
+  }
+
+  /**
+   * Récupère les données de l'actif actif de l'utilisateur (levier, tailles max, capital disponible)
+   */
+  @Get('active-asset')
+  @UseGuards(UserAuthGuard)
+  async getActiveAssetData(
+    @Query() query: GetActiveAssetDataQueryDto,
+  ): Promise<HlActiveAssetData> {
+    return this.privateInfoService.getActiveAssetData(query);
   }
 
   /**

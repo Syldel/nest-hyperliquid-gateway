@@ -10,9 +10,11 @@ import {
   PortfolioResponse,
   HLUserFillsRequest,
   HLUserFillsByTimeRequest,
+  HlActiveAssetData,
 } from '@syldel/hl-shared-types';
 import { UserContextService } from '../../auth/user-context.service';
 import { HyperliquidApiBaseInfoService } from './hyperliquid-api-base-info.service';
+import { GetActiveAssetDataQueryDto } from '../dtos/hyperliquid-info.query.dto';
 
 @Injectable()
 export class HyperliquidApiPrivateInfoService extends HyperliquidApiBaseInfoService {
@@ -201,6 +203,19 @@ export class HyperliquidApiPrivateInfoService extends HyperliquidApiBaseInfoServ
     return this.executeInfo<PortfolioResponse>({
       type: 'portfolio',
       user: this.userContext.walletAddress,
+    });
+  }
+
+  /**
+   * Récupère les données de l'actif actif de l'utilisateur (levier, tailles max, disponible).
+   */
+  async getActiveAssetData(
+    query: GetActiveAssetDataQueryDto,
+  ): Promise<HlActiveAssetData> {
+    return this.executeInfo<HlActiveAssetData>({
+      type: 'activeAssetData',
+      user: this.userContext.walletAddress,
+      coin: query.coin,
     });
   }
 }
