@@ -13,6 +13,7 @@ import {
   UpdateLeverageDto,
   TransferSpotPerpDto,
   CancelOrderByCloidDto,
+  PlaceOrdersDto,
 } from '../dtos/hyperliquid.dtos';
 import {
   BatchModifyOrdersDto,
@@ -44,6 +45,25 @@ export class HyperliquidTradeController {
     };
     return this.tradeService.placeOrder({
       order,
+      grouping: body.grouping,
+      builder: body.builder,
+      isTestnet: body.isTestnet,
+    });
+  }
+
+  /**
+   * Place plusieurs ordres en même temps.
+   * @param body Données des ordres.
+   */
+  @Post('orders')
+  @UseGuards(UserAuthGuard)
+  async placeOrders(@Body() body: PlaceOrdersDto) {
+    const orders: HLOrderDetails[] = body.orders.map((ord) => ({
+      ...ord,
+      orderType: this.mapOrderType(ord.orderType),
+    }));
+    return this.tradeService.placeOrders({
+      orders,
       grouping: body.grouping,
       builder: body.builder,
       isTestnet: body.isTestnet,

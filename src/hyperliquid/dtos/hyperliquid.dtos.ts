@@ -32,6 +32,24 @@ export class PlaceOrderDto {
   isTestnet: boolean = false;
 }
 
+export class PlaceOrdersDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => HLOrderDetailsDto)
+  orders: HLOrderDetailsDto[];
+
+  @IsOptional()
+  @IsIn(['na', 'normalTpsl', 'positionTpsl'])
+  grouping?: HLOrderGrouping;
+
+  @IsOptional()
+  builder?: { b: string; f: number };
+
+  @IsBoolean()
+  @IsOptional()
+  isTestnet: boolean = false;
+}
+
 export class CancelItemDto {
   @IsNumber()
   @IsNotEmpty()
