@@ -230,4 +230,34 @@ export class HyperliquidInfoController {
 
     return Promise.resolve({ assetId });
   }
+
+  /**
+   * Récupère le mode d'abstraction du compte (unifiedAccount, portfolioMargin, disabled, etc.)
+   */
+  @Get('account-mode')
+  @UseGuards(UserAuthGuard)
+  async getAccountMode() {
+    const mode = await this.privateInfoService.getAccountMode();
+    return { mode };
+  }
+
+  /**
+   * Récupère le solde du collatéral (total et utilisé) pour un actif donné.
+   * Route automatiquement la requête selon le mode du compte (unifié ou cloisonné).
+   */
+  @Get('collateral-balance')
+  @UseGuards(UserAuthGuard)
+  async getCollateralBalance(
+    @Query('asset') asset: string,
+    @Query('collateral') collateral: string = 'USDC',
+  ) {
+    const balance = await this.privateInfoService.getCollateralBalance(
+      asset,
+      collateral,
+    );
+    return {
+      asset,
+      ...balance,
+    };
+  }
 }
