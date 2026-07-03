@@ -12,19 +12,14 @@ import {
   HLUserFillsByTimeRequest,
   HlActiveAssetData,
   AccountAbstractionMode,
-  DecimalString,
 } from '@syldel/hl-shared-types';
 import { UserContextService } from '../../auth/user-context.service';
 import { HyperliquidApiBaseInfoService } from './hyperliquid-api-base-info.service';
 import { GetActiveAssetDataQueryDto } from '../dtos/hyperliquid-info.query.dto';
-import { AssetRegistryService } from './asset-registry.service';
 
 @Injectable()
 export class HyperliquidApiPrivateInfoService extends HyperliquidApiBaseInfoService {
-  constructor(
-    private readonly userContext: UserContextService,
-    private readonly assetRegistry: AssetRegistryService,
-  ) {
+  constructor(private readonly userContext: UserContextService) {
     super();
   }
 
@@ -238,55 +233,5 @@ export class HyperliquidApiPrivateInfoService extends HyperliquidApiBaseInfoServ
       },
       isTestnet,
     );
-  }
-
-  /**
-   * Récupère le solde du collatéral (Total et Utilisé) requis pour trader un actif donné.
-   * Route automatiquement la requête selon le mode du compte (unifié ou cloisonné).
-   * @param asset Le ticker de l'actif cible (ex: 'BTC', 'PURR')
-   */
-  async getCollateralBalance(
-    asset: string,
-    collateral: string = 'USDC',
-    isTestnet: boolean = false,
-  ): Promise<{
-    mode: AccountAbstractionMode;
-    total: DecimalString;
-    used: DecimalString;
-    collateral: string;
-  }> {
-    const mode = await this.getAccountMode(isTestnet);
-    const collateralUpper = collateral.toUpperCase();
-
-    // ─── L'EXCEPTION : NI UNIFIÉ, NI PORTFOLIO + MARCHÉ PERP ─────────────────
-    // S'applique si le mode est 'disabled', 'default' ou 'dexAbstraction'
-    if (
-      mode !== 'unifiedAccount' &&
-      mode !== 'portfolioMargin' &&
-      this.assetRegistry.isPerp(asset)
-    ) {
-      const dex = this.assetRegistry.getDexForAsset(asset);
-      const perpState = await this.getPerpAccountState({ dex, isTestnet });
-      return {
-        mode,
-        collateral,
-        total: perpState?.marginSummary?.accountValue || '0',
-        used: perpState?.marginSummary?.totalMarginUsed || '0',
-      };
-    }
-
-    // ─── LE CAS GÉNÉRAL : (Unified, Portfolio Margin, ou n'importe quel Spot) ──
-    // La minaudière de l'USDC se trouve obligatoirement sur le Spot
-    const spotState = await this.getSpotBalances(isTestnet);
-    const usdcBalance = spotState?.balances?.find(
-      (b) => b.coin === collateralUpper,
-    );
-
-    return {
-      mode,
-      collateral,
-      total: usdcBalance?.total || '0',
-      used: usdcBalance?.hold || '0',
-    };
   }
 }

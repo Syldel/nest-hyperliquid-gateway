@@ -17,6 +17,7 @@ import {
 import { UserAuthGuard } from '../../common/guards/user-auth.guard';
 import { AssetRegistryService } from '../services/asset-registry.service';
 import { HlActiveAssetData } from '@syldel/hl-shared-types';
+import { HyperliquidCollateralService } from '../services/hyperliquid-collateral.service';
 
 @Controller('hyperliquid/info')
 export class HyperliquidInfoController {
@@ -25,6 +26,7 @@ export class HyperliquidInfoController {
     private readonly publicInfoService: HyperliquidApiPublicInfoService,
     private readonly cache: MarketMetaCacheService,
     private readonly assetRegistryService: AssetRegistryService,
+    private readonly collateralService: HyperliquidCollateralService,
   ) {}
 
   /**
@@ -233,25 +235,27 @@ export class HyperliquidInfoController {
 
   /**
    * Récupère le mode d'abstraction du compte (unifiedAccount, portfolioMargin, disabled, etc.)
+   * Profite du cache de 24h géré par le service.
    */
   @Get('account-mode')
   @UseGuards(UserAuthGuard)
   async getAccountMode() {
-    const mode = await this.privateInfoService.getAccountMode();
+    const mode = await this.collateralService.getAccountMode();
     return { mode };
   }
 
   /**
    * Récupère le solde du collatéral (total et utilisé) pour un actif donné.
    * Route automatiquement la requête selon le mode du compte (unifié ou cloisonné).
+   * Résout le collatéral par défaut selon le DEX si non fourni.
    */
   @Get('collateral-balance')
   @UseGuards(UserAuthGuard)
   async getCollateralBalance(
     @Query('asset') asset: string,
-    @Query('collateral') collateral: string = 'USDC',
+    @Query('collateral') collateral?: string,
   ) {
-    const balance = await this.privateInfoService.getCollateralBalance(
+    const balance = await this.collateralService.getCollateralBalance(
       asset,
       collateral,
     );

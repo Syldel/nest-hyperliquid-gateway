@@ -34,6 +34,7 @@ import { PriceMathService } from './price-math.service';
 import { AssetRegistryService } from './asset-registry.service';
 import { ValueFormatterService } from './value-formatter.service';
 import { HyperliquidGatewayException } from '../exceptions/hyperliquid-gateway.exception';
+import { HyperliquidCollateralService } from './hyperliquid-collateral.service';
 
 @Injectable()
 export class SmartOrderService {
@@ -47,6 +48,7 @@ export class SmartOrderService {
     private readonly priceMath: PriceMathService,
     private readonly assetRegistry: AssetRegistryService,
     private readonly valueFormatter: ValueFormatterService,
+    private readonly collateralService: HyperliquidCollateralService,
   ) {}
 
   private prepareOrderPrice(
@@ -141,7 +143,7 @@ export class SmartOrderService {
       } else {
         const quoteValue = await this.resolveQuoteFromPercent({
           percent: size.percent,
-          dex,
+          asset: assetName,
           isTestnet,
         });
         sz = this.usdcToSize(quoteValue, price, market.szDecimals);
@@ -275,10 +277,10 @@ export class SmartOrderService {
 
   async resolveQuoteFromPercent(params: {
     percent: DecimalString;
-    dex?: string;
+    asset: string;
     isTestnet?: boolean;
   }): Promise<DecimalString> {
-    const { percent, dex, isTestnet = false } = params;
+    const { percent, asset } = params;
 
     const pctValue = this.decimalUtils.parse(percent);
     if (pctValue <= 0 || pctValue > 1) {
@@ -288,11 +290,10 @@ export class SmartOrderService {
       });
     }
 
-    const perpState = await this.privateInfoService.getPerpAccountState({
-      dex,
-      isTestnet,
-    });
-    const accountValue = perpState.marginSummary.accountValue;
+    const balanceInfo =
+      await this.collateralService.getCollateralBalance(asset);
+
+    const accountValue = balanceInfo.total;
 
     if (!this.decimalUtils.isPositive(accountValue)) {
       throw new HyperliquidGatewayException(
@@ -306,7 +307,7 @@ export class SmartOrderService {
       accountValue,
       percent,
       6,
-      'USDC balance',
+      `${balanceInfo.collateral} balance`,
     );
 
     if (!this.decimalUtils.isPositive(usdcToUse)) {

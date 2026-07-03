@@ -17,6 +17,7 @@ import { DecimalUtilsService } from '../utils/decimal-utils.service';
 import { PriceMathService } from './price-math.service';
 import { AssetRegistryService } from './asset-registry.service';
 import { ValueFormatterService } from './value-formatter.service';
+import { HyperliquidCollateralService } from './hyperliquid-collateral.service';
 
 describe('SmartOrderService', () => {
   let service: SmartOrderService;
@@ -24,11 +25,11 @@ describe('SmartOrderService', () => {
   let publicInfoService: HyperliquidApiPublicInfoService;
   let tradeService: HyperliquidApiTradeService;
   let assetRegistry: AssetRegistryService;
+  let collateralService: HyperliquidCollateralService;
 
   let placeOrderSpy: jest.SpyInstance;
   let waitOrderSpy: jest.SpyInstance;
   let getOrderStatusSpy: jest.SpyInstance;
-  let getPerpAccountStateSpy: jest.SpyInstance;
   let getFrontendOpenOrdersSpy: jest.SpyInstance;
   let batchModifyOrdersSpy: jest.SpyInstance;
   let cancelOrderSpy: jest.SpyInstance;
@@ -36,6 +37,7 @@ describe('SmartOrderService', () => {
   let getSzDecimals: jest.SpyInstance;
   let isPerp: jest.SpyInstance;
   let getDexForAsset: jest.SpyInstance;
+  let getCollateralBalance: jest.SpyInstance;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -75,6 +77,12 @@ describe('SmartOrderService', () => {
           },
         },
         ValueFormatterService,
+        {
+          provide: HyperliquidCollateralService,
+          useValue: {
+            getCollateralBalance: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -89,14 +97,13 @@ describe('SmartOrderService', () => {
       HyperliquidApiTradeService,
     );
     assetRegistry = module.get<AssetRegistryService>(AssetRegistryService);
+    collateralService = module.get<HyperliquidCollateralService>(
+      HyperliquidCollateralService,
+    );
 
     placeOrderSpy = jest.spyOn(tradeService, 'placeOrder');
     waitOrderSpy = jest.spyOn(service, 'waitForOrderFinalStatus');
     getOrderStatusSpy = jest.spyOn(privateInfoService, 'getOrderStatus');
-    getPerpAccountStateSpy = jest.spyOn(
-      privateInfoService,
-      'getPerpAccountState',
-    );
     getFrontendOpenOrdersSpy = jest.spyOn(
       privateInfoService,
       'getFrontendOpenOrders',
@@ -107,6 +114,10 @@ describe('SmartOrderService', () => {
     getSzDecimals = jest.spyOn(assetRegistry, 'getSzDecimals');
     isPerp = jest.spyOn(assetRegistry, 'isPerp');
     getDexForAsset = jest.spyOn(assetRegistry, 'getDexForAsset');
+    getCollateralBalance = jest.spyOn(
+      collateralService,
+      'getCollateralBalance',
+    );
   });
 
   describe('instantOrder', () => {
@@ -283,11 +294,12 @@ describe('SmartOrderService', () => {
 
   describe('resolveQuoteFromPercent', () => {
     it('should compute quote amount from percent', async () => {
-      getPerpAccountStateSpy.mockResolvedValue({
-        marginSummary: {
-          accountValue: '1000',
-        },
-      } as any);
+      getCollateralBalance.mockResolvedValue({
+        mode: 'unifiedAccount',
+        total: '1000',
+        used: '650',
+        collateral: 'USDC',
+      });
 
       const result = await service.resolveQuoteFromPercent({
         percent: '0.1',
@@ -298,11 +310,12 @@ describe('SmartOrderService', () => {
     });
 
     it('should support decimal percentages', async () => {
-      getPerpAccountStateSpy.mockResolvedValue({
-        marginSummary: {
-          accountValue: '1234.56',
-        },
-      } as any);
+      getCollateralBalance.mockResolvedValue({
+        mode: 'unifiedAccount',
+        total: '1234.56',
+        used: '650',
+        collateral: 'USDC',
+      });
 
       const result = await service.resolveQuoteFromPercent({
         percent: '0.25',
@@ -328,11 +341,12 @@ describe('SmartOrderService', () => {
     });
 
     it('should throw if account value is not positive', async () => {
-      getPerpAccountStateSpy.mockResolvedValue({
-        marginSummary: {
-          accountValue: '0',
-        },
-      } as any);
+      getCollateralBalance.mockResolvedValue({
+        mode: 'unifiedAccount',
+        total: '0',
+        used: '650',
+        collateral: 'USDC',
+      });
 
       await expect(
         service.resolveQuoteFromPercent({

@@ -18,6 +18,7 @@ import { ValueFormatterService } from './services/value-formatter.service';
 import { SmartOrderService } from './services/smart-order.service';
 import { DecimalUtilsService } from './utils/decimal-utils.service';
 import { PriceMathService } from './services/price-math.service';
+import { HyperliquidCollateralService } from './services/hyperliquid-collateral.service';
 
 @Module({
   imports: [AuthModule, CryptoModule],
@@ -40,6 +41,7 @@ import { PriceMathService } from './services/price-math.service';
     SmartOrderService,
     DecimalUtilsService,
     PriceMathService,
+    HyperliquidCollateralService,
   ],
 })
 export class HyperliquidModule {}
