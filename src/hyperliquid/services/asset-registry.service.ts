@@ -1,10 +1,27 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { MarketMetaCacheService } from './market-meta-cache.service';
 import { HLPerpMeta, HLSpotMeta } from '@syldel/hl-shared-types';
 
+/**
+ * Délai avant de retenter le chargement des symboles quand il échoue au
+ * démarrage, doublé à chaque échec et plafonné. Le plancher (60 s) est au moins
+ * égal à la première pause du garde-fou de débit : une tentative faite pendant
+ * la pause serait de toute façon refusée localement.
+ */
+export const REGISTRY_RETRY_BASE_MS = 60_000;
+export const REGISTRY_RETRY_MAX_MS = 15 * 60_000;
+
 @Injectable()
-export class AssetRegistryService implements OnModuleInit {
+export class AssetRegistryService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AssetRegistryService.name);
+
+  private retryTimer: NodeJS.Timeout | null = null;
+  private retryDelayMs = REGISTRY_RETRY_BASE_MS;
 
   // === Direct maps ===
   private nameToAssetId = new Map<string, number>();
@@ -18,13 +35,55 @@ export class AssetRegistryService implements OnModuleInit {
   constructor(private readonly metaCache: MarketMetaCacheService) {}
 
   async onModuleInit() {
-    await this.refreshSymbols();
+    await this.loadSymbolsOrRetryLater();
     this.metaCache.onMetaUpdated$.subscribe(() => {
       this.logger.log('Meta refreshed — updating symbol maps...');
       this.refreshSymbols().catch((err) =>
         this.logger.error('Failed to refresh symbol maps', err),
       );
     });
+  }
+
+  onModuleDestroy() {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+  }
+
+  /**
+   * Charge les symboles au démarrage **sans jamais faire échouer le
+   * démarrage**.
+   *
+   * Ce chargement coûte à lui seul ~260 de poids sur 1200 par minute
+   * (`perpDexs`, `spotMeta`, puis un `meta` par DEX : 11 DEX le 2026-09-21).
+   * S'il échouait, l'exception remontait de `onModuleInit`, le démarrage de
+   * Nest échouait et le processus s'arrêtait. Un hébergeur le relance aussitôt
+   * (Docker double le délai en partant de 100 ms) : le gateway rappelait
+   * Hyperliquid, échouait encore, et si l'échec était justement un refus de
+   * débit, chaque relance aggravait la sanction. C'était le scénario de
+   * bannissement le plus plausible de toute la chaîne.
+   *
+   * Désormais le processus reste debout, journalise l'échec et retente
+   * lentement. Tant que les symboles manquent, les requêtes qui en dépendent
+   * échouent avec une erreur explicite (`REGISTRY_ASSET_NOT_FOUND`...) : un
+   * gateway dégradé et bavard vaut mieux qu'un gateway qui redémarre en boucle.
+   */
+  private async loadSymbolsOrRetryLater(): Promise<void> {
+    try {
+      await this.refreshSymbols();
+      this.retryDelayMs = REGISTRY_RETRY_BASE_MS;
+    } catch (error: unknown) {
+      const delay = this.retryDelayMs;
+      this.retryDelayMs = Math.min(delay * 2, REGISTRY_RETRY_MAX_MS);
+
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Symbol registry could not be loaded (${message}). The gateway stays up; next attempt in ${delay / 1000}s.`,
+      );
+
+      this.retryTimer = setTimeout(() => {
+        this.retryTimer = null;
+        void this.loadSymbolsOrRetryLater();
+      }, delay);
+    }
   }
 
   /**

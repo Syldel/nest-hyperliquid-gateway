@@ -15,12 +15,16 @@ import {
 } from '@syldel/hl-shared-types';
 import { UserContextService } from '../../auth/user-context.service';
 import { HyperliquidApiBaseInfoService } from './hyperliquid-api-base-info.service';
+import { HyperliquidRateGuardService } from './hyperliquid-rate-guard.service';
 import { GetActiveAssetDataQueryDto } from '../dtos/hyperliquid-info.query.dto';
 
 @Injectable()
 export class HyperliquidApiPrivateInfoService extends HyperliquidApiBaseInfoService {
-  constructor(private readonly userContext: UserContextService) {
-    super();
+  constructor(
+    private readonly userContext: UserContextService,
+    rateGuard: HyperliquidRateGuardService,
+  ) {
+    super(rateGuard);
   }
 
   // ---------------------------------------------------------------------------

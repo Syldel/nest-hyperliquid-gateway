@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { HttpException, Injectable } from '@nestjs/common';
 
 import {
   HLOrderDetails,
@@ -36,6 +36,12 @@ import { SigningService } from '../../crypto/services/signing.service';
 import { WalletService } from '../../crypto/services/wallet.service';
 import { UserContextService } from '../../auth/user-context.service';
 import { UserClient } from '../../auth/user-client.service';
+import {
+  exchangeRequestWeight,
+  HyperliquidRateGuardService,
+  isAddressRateLimitMessage,
+  parseRetryAfterMs,
+} from './hyperliquid-rate-guard.service';
 
 @Injectable()
 export class HyperliquidApiTradeService {
@@ -52,6 +58,7 @@ export class HyperliquidApiTradeService {
     private readonly assetRegistry: AssetRegistryService,
     private readonly signingService: SigningService,
     private readonly walletService: WalletService,
+    private readonly rateGuard: HyperliquidRateGuardService,
   ) {}
 
   private getApiUrl(isTestnet: boolean): string {
@@ -75,8 +82,18 @@ export class HyperliquidApiTradeService {
 
     const wallet = this.walletService.createFromPrivateKey(privateKey);
 
+    // L'autre point de sortie vers Hyperliquid, avec `executeInfo`. Les ordres
+    // ne sont jamais freinés par le plafond local, seulement par une pause
+    // ouverte après un vrai refus d'Hyperliquid : voir le garde-fou.
+    const weight = exchangeRequestWeight(
+      action as unknown as Record<string, unknown>,
+    );
+
     for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
       try {
+        // 0. Refus local avant même de consommer un nonce
+        this.rateGuard.beforeCall('exchange', weight);
+
         // 1. Acquérir un nonce
         nonce = this.nonceManager.getTimestamp();
 
@@ -109,8 +126,24 @@ export class HyperliquidApiTradeService {
           },
         );
 
+        if (response.status === 429) {
+          this.rateGuard.recordResponse(weight, false);
+          throw this.rateGuard.rateLimited(
+            `exchange:${action.type}`,
+            parseRetryAfterMs(response.headers.get('retry-after')),
+          );
+        }
+
         if (!response.ok) {
+          this.rateGuard.recordResponse(weight, false);
           const errorData: unknown = await response.json().catch(() => ({}));
+          if (
+            isAddressRateLimitMessage((errorData as HLErrorResponse).message)
+          ) {
+            throw this.rateGuard.rateLimited(
+              `exchange:${action.type} (address limit)`,
+            );
+          }
           if ((errorData as HLErrorResponse).message) {
             throw new Error(
               `Hyperliquid API error: ${(errorData as HLErrorResponse).message}`,
@@ -120,8 +153,30 @@ export class HyperliquidApiTradeService {
         }
 
         const result = (await response.json()) as R;
+
+        // La limite par adresse peut arriver en HTTP 200, portée par le corps.
+        const reply = result as unknown as {
+          status?: string;
+          response?: unknown;
+        };
+        if (
+          reply?.status === 'err' &&
+          isAddressRateLimitMessage(reply.response)
+        ) {
+          this.rateGuard.recordResponse(weight, false);
+          throw this.rateGuard.rateLimited(
+            `exchange:${action.type} (address limit)`,
+          );
+        }
+
+        this.rateGuard.recordResponse(weight, true);
         return result;
       } catch (error) {
+        // Un refus de débit ne se relance JAMAIS, quelle que soit la valeur de
+        // MAX_RETRIES : relancer, c'est exactement prolonger la sanction.
+        if (error instanceof HttpException && error.getStatus() === 429) {
+          throw error;
+        }
         lastError = error;
 
         if (attempt < this.MAX_RETRIES) {

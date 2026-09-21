@@ -14,6 +14,7 @@ import { HyperliquidApiPrivateInfoService } from './services/hyperliquid-api-pri
 import { HyperliquidApiPublicInfoService } from './services/hyperliquid-api-public-info.service';
 import { MarketMetaCacheService } from './services/market-meta-cache.service';
 import { AssetRegistryService } from './services/asset-registry.service';
+import { HyperliquidRateGuardService } from './services/hyperliquid-rate-guard.service';
 import { ValueFormatterService } from './services/value-formatter.service';
 import { SmartOrderService } from './services/smart-order.service';
 import { DecimalUtilsService } from './utils/decimal-utils.service';
@@ -31,6 +32,7 @@ import { HyperliquidCollateralService } from './services/hyperliquid-collateral.
     ProtectiveOrdersController,
   ],
   providers: [
+    HyperliquidRateGuardService,
     HyperliquidConfigService,
     HyperliquidApiTradeService,
     HyperliquidApiPrivateInfoService,

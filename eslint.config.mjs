@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint';
 
 export default [
   {
-    ignores: ['dist', 'node_modules', 'eslint.config.mjs', '.idea'],
+    ignores: ['dist', 'node_modules', 'eslint.config.mjs', '.idea', 'scripts/**/*.mjs'],
   },
 
   // Recommandations de base ESLint
@@ -41,5 +41,5 @@ export default [
 
       'prettier/prettier': ['error', { endOfLine: 'auto' }],
     },
-  }
+  },
 ];
