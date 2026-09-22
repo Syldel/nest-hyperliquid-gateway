@@ -627,6 +627,16 @@ export class SmartOrderService {
     };
   }
 
+  /**
+   * ⚠️ Compare prix et taille en chaînes, et les deux côtés ne sont pas écrits
+   * pareil : la demande passe par `formatPrice` / `formatSize` (« 1103 »),
+   * l'existant garde l'écriture d'Hyperliquid (`o.triggerPx`, « 1103.0 »). Un
+   * prix entier est donc jugé changé, et l'ordre modifié à chaque appel, avec
+   * un nouvel oid. Constaté le 2026-09-22 sur un take-profit à 1 103 (test en
+   * conditions réelles du bot) ; un stop à 1 068,1 a été laissé tel quel.
+   * Détail : nest-trading-bot/docs/known-gaps.md, « Le gateway modifie une
+   * protection inchangée ».
+   */
   private isSameProtectiveOrder(
     a: NormalizedProtectiveOrder,
     b: NormalizedProtectiveOrder,
