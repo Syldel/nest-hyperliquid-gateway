@@ -3,5 +3,6 @@
   "trailingComma": "all",
   "tabWidth": 2,
   "useTabs": false,
-  "noSemi": false
+  "noSemi": false,
+  "endOfLine": "lf"
 }

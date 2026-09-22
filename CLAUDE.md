@@ -28,12 +28,13 @@ Ce qui en découle :
   autres dépôts.
 - **Le mode watch redémarre le gateway à chaque sauvegarde**, et chaque démarrage coûte
   ~260 de poids sur 1200 par minute. Grouper les modifications en une seule écriture.
-- **Fins de ligne** : ce dépôt n'a pas encore de `.gitattributes` et hérite de
-  `core.autocrlf=true` (défaut de Git for Windows) ; les fichiers sont en CRLF sur disque.
-  Ne pas lancer `npm run format` sur tout `src/` : il réécrirait chaque fichier en LF.
-  Formater seulement les fichiers touchés, avec `--end-of-line crlf` pour ceux qui
-  existent. À aligner sur `nest-trading-bot`, qui a réglé le sujet (voir son `CLAUDE.md`,
-  « Fins de ligne »).
+- **Fins de ligne : LF partout**, imposé par `.gitattributes` (`* text=auto eol=lf`) et
+  non par la configuration de la machine, comme dans `nest-trading-bot` et
+  `trading-shared-types`. Prettier écrit en LF (`endOfLine`, explicite dans
+  `.prettierrc`). Si un diff de fins de ligne réapparaît, vérifier d'abord
+  `git config core.autocrlf`, qui doit valoir `false` dans ce dépôt. Si `git status`
+  signale des fichiers que `git diff` montre identiques, c'est le cache de stat de
+  l'index : `git add --renormalize .` le remet d'aplomb, sans rien committer.
 - Commentaires en français, identifiants en anglais.
 - Les règles eslint du dépôt s'appliquent aussi aux specs (`no-unsafe-*`) : typer les
   doubles plutôt que de passer par `any` (`as never` pour un argument sans intérêt).
