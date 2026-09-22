@@ -21,6 +21,16 @@ Ce qui en découle :
   hébergeur le relance aussitôt, et chaque relance rappelle Hyperliquid ;
 - toute nouvelle boucle de relance est **bornée, espacée, et s'arrête sur un 429**.
 
+## L'autre règle qu'on ne devine pas
+
+**Un prix ou une taille mal écrits font refuser l'ordre, ou en font poser un autre.**
+Hyperliquid impose `szDecimals` sur les tailles, et sur les prix 5 chiffres significatifs
+et `MAX_DECIMALS - szDecimals` décimales — un prix entier échappant toujours aux chiffres
+significatifs. `ValueFormatterService` les applique, en **tronquant** et sans jamais passer
+par `Number`. Voir [docs/tick-and-lot-size.md](docs/tick-and-lot-size.md), y compris ce que
+la troncature implique pour un consommateur qui compare ensuite ce qu'il a demandé à ce que
+l'exchange détient.
+
 ## Travailler ici
 
 - **Ne jamais committer, tagger ou pousser sans demande explicite** : proposer un message
