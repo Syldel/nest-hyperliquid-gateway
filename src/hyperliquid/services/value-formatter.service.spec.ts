@@ -1,3 +1,4 @@
+import { TickAndLotError } from '@syldel/hl-shared-types';
 import { ValueFormatterService } from './value-formatter.service';
 
 const formatter = new ValueFormatterService();
@@ -55,8 +56,10 @@ describe('formatPrice', () => {
 
   describe('edge cases', () => {
     it('zero should return error', () => {
+      // Depuis le 2026-09-23, les regles vivent dans `@syldel/hl-shared-types`
+      // et levent une erreur typee plutot qu'une RangeError generique.
       expect(() => formatter.formatPrice('0.0000001', 0, 'perp')).toThrow(
-        RangeError,
+        TickAndLotError,
       );
     });
 
@@ -109,7 +112,9 @@ describe('formatSize', () => {
 
   describe('edge cases', () => {
     it('zero should throw', () => {
-      expect(() => formatter.formatSize('0.0000001', 0)).toThrow(RangeError);
+      expect(() => formatter.formatSize('0.0000001', 0)).toThrow(
+        TickAndLotError,
+      );
     });
 
     it('negative numbers are supported', () => {

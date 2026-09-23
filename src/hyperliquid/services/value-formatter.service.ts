@@ -1,155 +1,68 @@
 import { Injectable } from '@nestjs/common';
+import {
+  formatPrice,
+  formatSize,
+  HLMarketType,
+  priceDecimals,
+} from '@syldel/hl-shared-types';
 
-export type MarketType = 'perp' | 'spot';
+/**
+ * ============================================================================
+ * LE DERNIER MOT AVANT L'ENVOI
+ *
+ * Applique les règles de tick et de lot d'Hyperliquid à tout ordre sortant
+ * (`convertToApiOrder`). Un prix ou une taille mal écrits sont refusés par
+ * l'exchange, ou acceptés sous une forme tronquée qui n'est plus celle qu'on
+ * voulait — sur un stop loss, la différence entre les deux, c'est une position
+ * protégée et une position qui ne l'est pas.
+ *
+ * Les règles elles-mêmes vivent dans `@syldel/hl-shared-types`
+ * (`format/tick-and-lot.ts`), et non ici : le bot doit pouvoir savoir **avant
+ * d'envoyer** ce que le gateway posera, sans quoi il croit avoir posé autre
+ * chose que ce qui l'a été. Une seule implémentation, importée des deux côtés.
+ * Ce service n'en est plus que la façade injectable.
+ *
+ * Voir docs/tick-and-lot-size.md.
+ * ============================================================================
+ */
+
+export type MarketType = HLMarketType;
 
 @Injectable()
 export class ValueFormatterService {
-  private readonly MAX_DECIMALS: Record<MarketType, number> = {
-    perp: 6,
-    spot: 8,
-  };
-
   /**
-   * Format a price according to Hyperliquid rules:
-   * - Max 5 significant figures
-   * - Max (6 or 8) - szDecimals decimal places
-   * - Integer prices always allowed
+   * Formate un prix : au plus 5 chiffres significatifs, au plus
+   * `MAX_DECIMALS - szDecimals` décimales, un entier étant toujours accepté.
    *
-   * @param price Price as string or number
-   * @param szDecimals Number of size decimals of the asset
-   * @param type Market type ("perp" or "spot"), default "perp"
-   * @throws RangeError if truncated price is 0
+   * @throws {TickAndLotError} si la valeur est illisible, ou tronquée à zéro.
    */
   formatPrice(
     price: string | number,
     szDecimals: number,
     type: MarketType = 'perp',
   ): string {
-    price = String(price).trim();
-    assertNumberString(price);
-
-    // Integer bypasses sig figs
-    if (/^-?\d+$/.test(price)) return formatDecimalString(price);
-
-    const maxDecimals = Math.max(this.MAX_DECIMALS[type] - szDecimals, 0);
-
-    // Apply decimal limit first
-    price = StringMath.toFixedTruncate(price, maxDecimals);
-
-    // Apply significant figures limit
-    price = StringMath.toPrecisionTruncate(price, 5);
-
-    if (price === '0') {
-      throw new RangeError('Price is too small and was truncated to 0');
-    }
-
-    return price;
+    return formatPrice(price, szDecimals, type);
   }
 
   /**
-   * Format size according to Hyperliquid rules:
-   * - Truncate decimal places to szDecimals
+   * Formate une taille : **tronquée** à `szDecimals`, jamais arrondie.
    *
-   * @param size Size as string or number
-   * @param szDecimals Number of size decimals
-   * @throws RangeError if truncated size is 0
+   * @throws {TickAndLotError} si la valeur est illisible, ou tronquée à zéro.
    */
   formatSize(size: string | number, szDecimals: number): string {
-    size = String(size).trim();
-    assertNumberString(size);
-
-    size = StringMath.toFixedTruncate(size, szDecimals);
-
-    if (size === '0')
-      throw new RangeError('Size is too small and was truncated to 0');
-
-    return size;
+    return formatSize(size, szDecimals);
   }
-}
 
-/** String-based math for arbitrary precision */
-const StringMath = {
-  log10Floor(value: string): number {
-    const abs = value[0] === '-' ? value.slice(1) : value;
-    const num = Number(abs);
-    if (num === 0 || isNaN(num)) return -Infinity;
-    const [int, dec = ''] = abs.split('.');
-    if (Number(int) !== 0) {
-      const trimmed = int.replace(/^0+/, '');
-      return trimmed.length - 1;
-    }
-    const leadingZeros = dec.match(/^0*/)?.[0].length ?? 0;
-    return -(leadingZeros + 1);
-  },
-
-  multiplyByPow10(value: string, exp: number): string {
-    const neg = value[0] === '-' ? true : false;
-    const abs = neg ? value.slice(1) : value;
-    const [intRaw, dec = ''] = abs.split('.');
-    const int = intRaw || '0';
-    let result: string;
-
-    if (exp > 0) {
-      if (exp >= dec.length) result = int + dec + '0'.repeat(exp - dec.length);
-      else result = int + dec.slice(0, exp) + '.' + dec.slice(exp);
-    } else if (exp < 0) {
-      const absExp = -exp;
-      if (absExp >= int.length)
-        result = '0.' + '0'.repeat(absExp - int.length) + int + dec;
-      else result = int.slice(0, -absExp) + '.' + int.slice(-absExp) + dec;
-    } else {
-      result = int + (dec ? '.' + dec : '');
-    }
-
-    return formatDecimalString((neg ? '-' : '') + result);
-  },
-
-  trunc(value: string): string {
-    const dotIndex = value.indexOf('.');
-    return dotIndex === -1 ? value : value.slice(0, dotIndex) || '0';
-  },
-
-  toPrecisionTruncate(value: string, precision: number): string {
-    if (!Number.isInteger(precision) || precision < 1)
-      throw new RangeError('Precision must be a positive integer');
-
-    if (/^-?0+(\.0*)?$/.test(value)) return '0';
-
-    const neg = value[0] === '-' ? true : false;
-    const abs = neg ? value.slice(1) : value;
-    const magnitude = StringMath.log10Floor(abs);
-    const shiftAmount = precision - magnitude - 1;
-    const shifted = StringMath.multiplyByPow10(abs, shiftAmount);
-    const truncated = StringMath.trunc(shifted);
-    const result = StringMath.multiplyByPow10(truncated, -shiftAmount);
-
-    return formatDecimalString(neg ? '-' + result : result);
-  },
-
-  toFixedTruncate(value: string, decimals: number): string {
-    if (!Number.isInteger(decimals) || decimals < 0)
-      throw new RangeError('Decimals must be a non-negative integer');
-    const regex = new RegExp(`^-?(?:\\d+)?(?:\\.\\d{0,${decimals}})?`);
-    const result = value.match(regex)?.[0];
-    if (!result) throw new TypeError('Invalid number format');
-    return formatDecimalString(result);
-  },
-};
-
-/** Normalize decimal strings */
-function formatDecimalString(value: string): string {
-  return value
-    .trim()
-    .replace(/^(-?)0+(?=\d)/, '$1')
-    .replace(/\.0*$|(\.\d+?)0+$/, '$1')
-    .replace(/^(-?)\./, '$10.')
-    .replace(/^-?$/, '0')
-    .replace(/^-0$/, '0');
-}
-
-/** Validate numeric string */
-function assertNumberString(value: string): void {
-  if (!/^-?(\d+\.?\d*|\.\d*)$/.test(value)) {
-    throw new TypeError(`Invalid number format: ${value}`);
+  /**
+   * Le nombre de décimales que ce prix a le droit d'avoir — les deux règles
+   * réunies en un seul nombre. Exposé pour qu'un appelant puisse poser une
+   * valeur déjà sur la grille plutôt que de la faire tronquer derrière lui.
+   */
+  priceDecimals(
+    price: string | number,
+    szDecimals: number,
+    type: MarketType = 'perp',
+  ): number {
+    return priceDecimals(price, szDecimals, type);
   }
 }

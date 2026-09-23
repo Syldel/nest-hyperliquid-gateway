@@ -2,33 +2,22 @@
 
 ## Pourquoi ce document existe
 
-Un prix ou une taille mal écrits ne sont pas une coquette de format : Hyperliquid **refuse**
-l'ordre, ou en accepte une version tronquée qui n'est plus celle qu'on voulait. Sur un stop
-loss, la différence entre les deux, c'est une position protégée et une position qui ne l'est
-pas.
-
-Ce gateway est la **seule** sortie vers Hyperliquid. C'est donc ici, et nulle part ailleurs,
-que ces règles s'appliquent — un consommateur (le bot de trading, l'app) peut calculer ce
-qu'il veut, `ValueFormatterService` est le dernier mot avant l'envoi.
-
-⚠️ Corollaire pour les consommateurs : **ce que vous envoyez n'est pas forcément ce qui est
-posé.** Le gateway tronque sans le dire. Un consommateur qui compare ensuite « ce que j'ai
-demandé » à « ce que l'exchange détient » doit comparer des **valeurs**, pas des écritures,
-et prévoir que la sienne ait été raccourcie. Voir [Ce que ça implique en
-aval](#ce-que-ça-implique-en-aval).
+Un prix ou une taille mal écrits ne sont pas une coquetterie de format : Hyperliquid
+**refuse** l'ordre, ou en accepte une version tronquée qui n'est plus celle qu'on voulait.
+Sur un stop loss, la différence entre les deux, c'est une position protégée et une position
+qui ne l'est pas.
 
 ## Les règles
 
 Source : [Tick and lot size](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/tick-and-lot-size)
 et [Notation](https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/notation),
-relevés le 2026-09-22.
+relevées le 2026-09-23.
 
 `szDecimals` est propre à chaque actif et se lit dans la réponse `meta` de `/info`.
 
 ### Tailles (`sz`)
 
-Arrondies à `szDecimals`. Si `szDecimals = 3`, `1.001` est valide, `1.0001` ne l'est pas.
-
+Tronquées à `szDecimals`. Si `szDecimals = 3`, `1.001` est valide, `1.0001` ne l'est pas.
 La taille est exprimée **en unités de la devise de base** (`Sz`), pas en USD — le notionnel,
 c'est `Ntl = Px * Sz`.
 
@@ -43,8 +32,6 @@ Deux plafonds, cumulatifs :
 **Un prix entier est toujours accepté**, quel que soit son nombre de chiffres significatifs.
 `123456` est valide là où `12345.6` ne l'est pas.
 
-Exemples de la documentation :
-
 | Marché | Prix | `szDecimals` | Verdict |
 | --- | --- | --- | --- |
 | perp | `1234.5` | — | valide |
@@ -56,48 +43,102 @@ Exemples de la documentation :
 | spot | `0.0001234` | 0 ou 1 | valide |
 | spot | `0.0001234` | 3 | refusé (plus de 8 − 3 décimales) |
 
-## Ce que le gateway en fait
+## Où vivent ces règles, et pourquoi pas ici
 
-`ValueFormatterService` (`src/hyperliquid/services/value-formatter.service.ts`), appelé par
-`convertToApiOrder` pour **tout** ordre sortant.
+Dans **`@syldel/hl-shared-types`** (`format/tick-and-lot.ts`), importées par le gateway *et*
+par le bot de trading. `ValueFormatterService` n'en est plus que la façade injectable.
 
-- `formatSize(size, szDecimals)` : **tronque** à `szDecimals`. Lève une `RangeError` si la
-  troncature donne 0 — une taille trop petite est refusée, jamais envoyée à zéro.
-- `formatPrice(price, szDecimals, type)` : laisse passer un entier tel quel, sinon applique
-  d'abord la limite de décimales, **puis** celle des 5 chiffres significatifs. Lève une
-  `RangeError` si le résultat vaut 0.
+Ce n'est pas un rangement : c'est la correction d'un défaut. Tant que le gateway avait sa
+règle et le bot la sienne, le bot pouvait envoyer une valeur que le gateway raccourcissait
+**sans le dire** — le bot croyait alors avoir posé un prix qui ne l'était pas, et son
+contrôle de cohérence réclamait un réalignement à chaque passage. Mesuré le 2026-09-23 :
+le bot envoyait `12.3456`, le gateway posait `12.345`. Détail dans
+`nest-trading-bot/docs/known-gaps.md`, « Prix et tailles : trois défauts de formatage ».
 
-Trois points à retenir :
+**L'invariant qui l'empêche de revenir** :
 
-- **tronquer, pas arrondir.** `toFixedTruncate` et `toPrecisionTruncate` coupent. Un prix de
-  `12.3456` devient `12.345`, jamais `12.346` ;
-- **rien ne passe par `Number`.** Tout le calcul est fait sur les chiffres écrits
-  (`StringMath`), parce qu'un `parseFloat` réintroduirait exactement l'erreur d'arrondi que
-  ces règles servent à éviter ;
-- **une chaîne qui n'est pas un décimal simple est refusée** (`assertNumberString`) : la
-  notation scientifique comprise. `1e-7` lève une `TypeError`, donc un 500 — et, sur une
-  écriture, un ordre dont le consommateur ne saura pas s'il est passé. Un consommateur ne
-  doit jamais construire une taille par `Number(...).toString()`, qui produit `1e-7` pour
-  `0.0000001`.
+> Ce qu'un émetteur envoie doit être un **point fixe** du formateur :
+> `formatPrice(x) === x`. Sinon il ignore ce qu'il a posé.
 
-Éprouvé par `value-formatter.service.spec.ts`, y compris sur les prix et tailles minimaux de
-référence des perps et des spots.
+`snapPrice(price, szDecimals, type, mode)` sert précisément à ça : il pose un prix sur la
+grille **dans un sens choisi** et garantit le point fixe, là où `formatPrice` tronque
+toujours. Un émetteur qui veut qu'un stop ne s'éloigne jamais de son ancre en a besoin.
+
+Trois points à retenir sur l'implémentation :
+
+- **tronquer, pas arrondir** — un prix de `12.3456` devient `12.345`, jamais `12.346` ;
+- **rien ne passe par `Number`** : tout le calcul se fait sur les chiffres écrits, en
+  `BigInt`. Un `parseFloat` réintroduirait l'erreur d'arrondi que ces règles servent à
+  éviter ;
+- **une chaîne qui n'est pas un décimal simple est refusée**, notation scientifique
+  comprise. Un `number` en revanche est une valeur *calculée* : il est écrit exactement,
+  exposant déplié. Un émetteur ne doit jamais fabriquer une taille par
+  `Number(...).toString()`, qui rend `1e-7` pour `0.0000001`.
+
+Éprouvé par `test/tick-and-lot.spec.ts` dans `hl-shared-types`, sur **tous** les exemples de
+la documentation, plus ceux de l'oracle ci-dessous.
+
+## Un écart assumé sur l'exemption des entiers
+
+Au-delà de 99 999 avec une partie fractionnaire, deux implémentations de référence — celle
+du gateway avant le 2026-09-23, et [nktkas/hyperliquid](https://github.com/nktkas/hyperliquid/blob/main/src/utils/_format.ts) —
+appliquent les 5 chiffres significatifs **avant** de constater que le résultat tronqué est
+entier : `123456.7` y devient `123450`.
+
+La documentation dit « Integer prices are always allowed, regardless of the number of
+significant figures ». `123456` est donc valide, et perd 6 $ de moins. C'est ce que fait
+l'implémentation partagée.
+
+Le même changement corrigeait un vrai défaut du gateway : il testait l'exemption sur
+**l'écriture d'entrée** plutôt que sur la valeur, si bien que `'123456'` rendait `123456`
+mais `'123456.0'` rendait `123450` — la même valeur, écrite autrement. Or Hyperliquid écrit
+justement ses prix entiers avec un `.0`.
+
+⚠️ **Non vérifié sur le vrai exchange** : cela demande de passer un ordre. À confirmer lors
+d'un prochain test en conditions réelles du bot. Le mode d'échec serait bruyant — un ordre
+refusé, pas un ordre posé de travers.
+
+## Une implémentation tierce, comme oracle et non comme dépendance
+
+`@nktkas/hyperliquid` implémente ces mêmes règles. Elle a été **lue** le 2026-09-23, jamais
+installée, et c'est délibéré :
+
+- **le gateway est le processus qui signe.** Une librairie de formatage assise à côté de la
+  clé, mise à jour automatiquement, est la cible la plus rentable de tout le système. Pour
+  deux fonctions, et `decimal.js` avec elles, le ratio est mauvais ;
+- **les trois conditions sous lesquelles posséder son code bat en dépendre sont réunies** :
+  c'est petit (~250 lignes avec les commentaires), c'est figé (le jour où l'API v1 changera
+  la notation, il faudra relire la règle de toute façon), et c'est entièrement spécifié donc
+  testable ;
+- une librairie abandonnée, c'est un fork à faire plus tard, en urgence, sur du code qu'on
+  n'a jamais lu.
+
+**Mais posséder oblige.** Ce qui rend l'autonomie sûre, ce n'est pas d'écrire le code, c'est
+de prouver sa conformité en continu. D'où la méthode : quand la documentation bouge ou qu'un
+doute surgit, on **relit** une implémentation tierce et on **date la confrontation**. Celle
+du 2026-09-23 a révélé le défaut de l'exemption des entiers en dix minutes, sans installer
+une ligne.
+
+⚠️ Un faux gateway de test, lui, garde une **copie indépendante** de ces règles
+(`nest-trading-bot/src/hyperliquid/testing/gateway-contract.ts`). S'il importait
+l'implémentation partagée, un défaut s'y annulerait des deux côtés et aucun test ne le
+verrait.
 
 ## Ce que ça implique en aval
 
-Le gateway garantit qu'un ordre **part** conforme. Il ne garantit pas que le consommateur
-sache ce qui est parti. Deux conséquences, vérifiées le 2026-09-22 :
+Le gateway garantit qu'un ordre **part** conforme, et ne dit pas ce qu'il a changé. Deux
+conséquences, vérifiées le 2026-09-22 :
 
 1. **Une valeur tronquée n'est pas signalée en retour.** Le consommateur qui a demandé
-   `0.002325` sur un actif à 5 décimales voit poser `0.00232` ; le reliquat n'existe que
-   dans son propre décompte. Le bot de trading lit désormais `origSz` et `sz` dans la
-   réponse plutôt que de recalculer, et journalise un écart entre demandé et posé.
+   `0.002325` sur un actif à 5 décimales voit poser `0.00232` ; le reliquat n'existe que dans
+   son propre décompte. Le bot lit désormais `origSz` et `sz` dans la réponse plutôt que de
+   recalculer, et journalise un écart entre demandé et posé.
 2. **Deux écritures d'un même prix ne sont pas le même texte.** `isSameProtectiveOrder`
-   (`smart-order.service.ts`) compare prix et tailles **en chaînes** : la demande passe par
-   `formatPrice` (`1103`) quand l'existant garde l'écriture d'Hyperliquid, qui ajoute une
-   décimale à un prix entier (`1103.0`). Un ordre inchangé est donc modifié pour rien. ⚠️
-   Défaut ouvert, signalé dans le code ; voir
-   `nest-trading-bot/docs/known-gaps.md`, « Le gateway modifie une protection inchangée ».
+   (`smart-order.service.ts`) comparait prix et tailles **en chaînes** : la demande passait
+   par `formatPrice` (`1103`) quand l'existant gardait l'écriture d'Hyperliquid (`1103.0`),
+   et un ordre inchangé était modifié pour rien, avec un nouvel oid. **Corrigé le
+   2026-09-23** : les deux côtés sont réécrits dans la même forme canonique avant comparaison
+   (`canonicalOrRaw`).
 
 ## Quand ce document doit changer
 

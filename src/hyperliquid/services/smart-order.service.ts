@@ -628,14 +628,50 @@ export class SmartOrderService {
   }
 
   /**
-   * ⚠️ Compare prix et taille en chaînes, et les deux côtés ne sont pas écrits
-   * pareil : la demande passe par `formatPrice` / `formatSize` (« 1103 »),
-   * l'existant garde l'écriture d'Hyperliquid (`o.triggerPx`, « 1103.0 »). Un
-   * prix entier est donc jugé changé, et l'ordre modifié à chaque appel, avec
-   * un nouvel oid. Constaté le 2026-09-22 sur un take-profit à 1 103 (test en
-   * conditions réelles du bot) ; un stop à 1 068,1 a été laissé tel quel.
-   * Détail : nest-trading-bot/docs/known-gaps.md, « Le gateway modifie une
-   * protection inchangée ».
+   * Réécrit une valeur rendue par Hyperliquid dans la forme canonique que la
+   * demande prendra, pour que les deux se comparent sur la **valeur** et non
+   * sur l'écriture.
+   *
+   * Un ordre qu'Hyperliquid détient est valide par construction, donc ce
+   * formatage est un point fixe : il ne peut rien perdre. S'il échoue malgré
+   * tout, c'est que nos règles divergent des siennes — on garde alors la valeur
+   * brute, ce qui fait simplement conclure « changé » et renvoyer une
+   * modification, et on le dit plutôt que de le taire.
+   */
+  private canonicalOrRaw(
+    value: string,
+    assetName: string,
+    field: 'price' | 'size',
+  ): string {
+    const szDecimals = this.assetRegistry.getSzDecimals(assetName) ?? 6;
+    const isPerp = this.assetRegistry.isPerp(assetName);
+
+    try {
+      return field === 'price'
+        ? this.valueFormatter.formatPrice(
+            value,
+            szDecimals,
+            isPerp ? 'perp' : 'spot',
+          )
+        : this.valueFormatter.formatSize(value, szDecimals);
+    } catch (error) {
+      this.logger.warn(
+        `[${assetName}] Existing protective ${field} ${value} does not survive our own formatting ` +
+          `(szDecimals ${szDecimals}): ${(error as Error).message}. Comparing it raw.`,
+      );
+
+      return value;
+    }
+  }
+
+  /**
+   * Compare deux protections déjà réécrites dans la même forme canonique — voir
+   * `canonicalOrRaw`. Avant le 2026-09-23, la demande passait par `formatPrice`
+   * (« 1103 ») quand l'existant gardait l'écriture d'Hyperliquid (« 1103.0 ») :
+   * un prix entier était jugé changé, et l'ordre modifié à chaque appel avec un
+   * nouvel oid. Constaté le 2026-09-22 sur un take-profit à 1 103 lors du test
+   * en conditions réelles du bot ; un stop à 1 068,1, écrit pareil des deux
+   * côtés, était laissé tel quel.
    */
   private isSameProtectiveOrder(
     a: NormalizedProtectiveOrder,
@@ -734,8 +770,12 @@ export class SmartOrderService {
       .map((o) => ({
         oid: o.oid,
         kind: mapKind(o.orderType),
-        price: o.triggerPx,
-        sz: o.sz,
+        // Écrit comme la demande le sera. Hyperliquid rend un prix entier avec
+        // une décimale (« 1103.0 ») quand `formatPrice` rend « 1103 » : les
+        // comparer tels quels jugeait changé un ordre identique, et le modifiait
+        // à chaque passage avec un nouvel oid. Mesuré le 2026-09-22.
+        price: this.canonicalOrRaw(o.triggerPx, assetName, 'price'),
+        sz: this.canonicalOrRaw(o.sz, assetName, 'size'),
         isMarket: o.orderType.toLowerCase().includes('market'),
       }))
       .sort((a, b) => Number(a.price) - Number(b.price));

@@ -551,6 +551,91 @@ describe('SmartOrderService', () => {
       );
     });
 
+    it('leaves an unchanged protective order alone when Hyperliquid spells it with a decimal', async () => {
+      // Test de regression du defaut mesure le 2026-09-22 lors du test en
+      // conditions reelles du bot : Hyperliquid rend un prix entier avec une
+      // decimale (« 1103.0 ») quand `formatPrice` rend « 1103 ». Les deux cotes
+      // etaient compares en chaines, donc un take-profit inchange etait modifie
+      // a chaque passage, et recevait un nouvel oid. Un stop a 1 068,1, ecrit
+      // pareil des deux cotes, etait laisse tel quel — d'ou le second ordre
+      // ci-dessous, qui doit lui aussi rester tranquille.
+      getSzDecimals.mockReturnValue(2);
+      isPerp.mockReturnValue(true);
+      getAssetId.mockReturnValue(7);
+
+      const existing = [
+        makeFrontendProtectiveOrder({
+          assetName,
+          oid: 301,
+          kind: 'tp',
+          price: '1103.0',
+          sz: '2.00',
+          side: 'B',
+        }),
+        makeFrontendProtectiveOrder({
+          assetName,
+          oid: 302,
+          kind: 'sl',
+          price: '1068.1',
+          sz: '2.00',
+          side: 'B',
+        }),
+      ];
+      getFrontendOpenOrdersSpy.mockResolvedValue(existing);
+
+      await service.placeBatchProtectiveOrders(
+        {
+          assetName,
+          isBuy,
+          tp: [{ kind: 'tp', price: '1103', sz: '2' }],
+          sl: [{ kind: 'sl', price: '1068.1', sz: '2' }],
+        },
+        false,
+      );
+
+      // Rien ne doit partir : les deux protections sont deja en place.
+      expect(batchModifyOrdersSpy).not.toHaveBeenCalled();
+      expect(placeOrderSpy).not.toHaveBeenCalled();
+      expect(cancelOrderSpy).not.toHaveBeenCalled();
+    });
+
+    it('still modifies a protective order whose price really changed', async () => {
+      // La contrepartie : normaliser les deux cotes ne doit pas rendre le
+      // gateway aveugle a un vrai changement.
+      getSzDecimals.mockReturnValue(2);
+      isPerp.mockReturnValue(true);
+      getAssetId.mockReturnValue(7);
+
+      getFrontendOpenOrdersSpy.mockResolvedValue([
+        makeFrontendProtectiveOrder({
+          assetName,
+          oid: 301,
+          kind: 'tp',
+          price: '1103.0',
+          sz: '2.00',
+          side: 'B',
+        }),
+      ]);
+      batchModifyOrdersSpy.mockResolvedValue({
+        status: 'ok',
+        response: { data: { statuses: [{ resting: { oid: 1301 } }] } },
+      });
+
+      await service.placeBatchProtectiveOrders(
+        {
+          assetName,
+          isBuy,
+          tp: [{ kind: 'tp', price: '1104', sz: '2' }],
+        },
+        false,
+      );
+
+      expect(batchModifyOrdersSpy).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ oid: 301 })]),
+        false,
+      );
+    });
+
     it('should update 2 orders, cancel 1 SL an add 1 TP', async () => {
       const existing = [
         makeOrderFromSpec('101_0.5_9000_tp', assetName),

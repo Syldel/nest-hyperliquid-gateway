@@ -26,10 +26,12 @@ Ce qui en découle :
 **Un prix ou une taille mal écrits font refuser l'ordre, ou en font poser un autre.**
 Hyperliquid impose `szDecimals` sur les tailles, et sur les prix 5 chiffres significatifs
 et `MAX_DECIMALS - szDecimals` décimales — un prix entier échappant toujours aux chiffres
-significatifs. `ValueFormatterService` les applique, en **tronquant** et sans jamais passer
-par `Number`. Voir [docs/tick-and-lot-size.md](docs/tick-and-lot-size.md), y compris ce que
-la troncature implique pour un consommateur qui compare ensuite ce qu'il a demandé à ce que
-l'exchange détient.
+significatifs. Ces règles vivent dans **`@syldel/hl-shared-types`**, importées ici *et* par le bot :
+`ValueFormatterService` n'en est plus que la façade injectable. Deux implémentations, c'est
+la garantie qu'un émetteur croira un jour avoir posé autre chose que ce qui l'a été. Voir
+[docs/tick-and-lot-size.md](docs/tick-and-lot-size.md), y compris l'invariant du point fixe
+et la décision de ne pas prendre de dépendance tierce ici — le gateway est le processus qui
+signe.
 
 ## Travailler ici
 
