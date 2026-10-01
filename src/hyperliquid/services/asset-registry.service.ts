@@ -32,6 +32,23 @@ export class AssetRegistryService implements OnModuleInit, OnModuleDestroy {
   private assetIdToName = new Map<number, string>();
   private nameToDexName = new Map<string, string>();
 
+  /**
+   * Index du token qui sert de collatéral à chaque marché.
+   *
+   * Dérivé, jamais codé en dur : pour un perp c'est le `collateralToken` du
+   * `meta` de son dex, pour une paire spot c'est son token de quote. Les trois
+   * dépôts tenaient jusqu'ici une table `cash → USDT / hyna → USDE / sinon
+   * USDC` qui ne couvrait que 2 des 10 dex déployés — et dont les deux entrées
+   * désignent des dex éteints depuis juin et août 2026.
+   *
+   * Une absence n'a **pas** de valeur de repli : un marché dont le collatéral
+   * n'a pas été résolu doit se dire, pas se deviner.
+   */
+  private nameToCollateralToken = new Map<string, number>();
+
+  /** Symbole d'un token par son index — pour l'affichage, et pour rien d'autre. */
+  private tokenIndexToSymbol = new Map<number, string>();
+
   constructor(private readonly metaCache: MarketMetaCacheService) {}
 
   async onModuleInit() {
@@ -95,6 +112,9 @@ export class AssetRegistryService implements OnModuleInit, OnModuleDestroy {
 
     this.clearMaps();
 
+    // Les symboles de token d'abord : le spot comme le perp y apparient leur
+    // collatéral, et un index sans symbole ne s'affiche pas.
+    this.buildTokenSymbols(spotMeta);
     this.buildSpotMaps(spotMeta);
 
     for (let i = 0; i < dexs.length; i++) {
@@ -132,6 +152,16 @@ export class AssetRegistryService implements OnModuleInit, OnModuleDestroy {
       }
 
       this.register(asset.name, assetId, asset.szDecimals, dexName);
+
+      // Tout le dex se règle dans le même token. Un `meta` qui ne le porterait
+      // pas ne laisse rien à enregistrer : le collatéral sera dit introuvable,
+      // jamais supposé USDC.
+      if (perpMetaData.collateralToken !== undefined) {
+        this.nameToCollateralToken.set(
+          asset.name,
+          perpMetaData.collateralToken,
+        );
+      }
     });
   }
 
@@ -146,11 +176,19 @@ export class AssetRegistryService implements OnModuleInit, OnModuleDestroy {
    * Applique une exception de nommage sémantique exclusivement pour les jetons de la couche Hyperunit.
    */
   private buildSpotMaps(spotMetaData: HLSpotMeta): void {
+    // ⚠️ Un token se retrouve par son `index`, **jamais** par sa position dans
+    // le tableau. Les deux coïncident aujourd'hui et rien ne le garantit : une
+    // paire appariée au mauvais token donnerait un collatéral faux, donc une
+    // taille d'ordre calculée sur le solde d'un autre actif.
+    const tokensByIndex = new Map(
+      spotMetaData.tokens.map((token) => [token.index, token]),
+    );
+
     spotMetaData.universe.forEach((market) => {
       if (market.tokens.length < 2) return;
 
-      const baseToken = spotMetaData.tokens[market.tokens[0]];
-      const quoteToken = spotMetaData.tokens[market.tokens[1]];
+      const baseToken = tokensByIndex.get(market.tokens[0]);
+      const quoteToken = tokensByIndex.get(market.tokens[1]);
       if (!baseToken || !quoteToken) return;
 
       // 1. Calcul de l'ID d'Asset Spot protocolaire (10000 + index)
@@ -166,14 +204,28 @@ export class AssetRegistryService implements OnModuleInit, OnModuleDestroy {
 
       const officialPairName = `${l1BaseName}/${quoteName}`; // ex: "UBTC/USDC"
 
+      /**
+       * Un même marché s'enregistre sous plusieurs noms (protocolaire, L1,
+       * alias Hyperunit) : ils doivent tous porter le même collatéral, sans
+       * quoi la réponse dépendrait du nom par lequel on a demandé.
+       *
+       * Le collatéral d'une paire spot est son **token de quote** : c'est ce
+       * qu'on dépense pour acheter la base. La doc le dit pour le compte
+       * unifié — « USDT spot balance is the single source for CASH perps and
+       * spot trading against USDT as a quote asset ».
+       */
+      const registerSpotName = (name: string) => {
+        this.register(name, assetId, baseToken.szDecimals);
+        this.nameToSpotPairId.set(name, market.name);
+        this.nameToCollateralToken.set(name, quoteToken.index);
+      };
+
       // --- ENREGISTREMENT 1 : Format Index Protocole (ex: "@1") ---
-      this.register(protocolCoinName, assetId, baseToken.szDecimals);
-      this.nameToSpotPairId.set(protocolCoinName, market.name);
+      registerSpotName(protocolCoinName);
 
       // --- ENREGISTREMENT 2 : Format L1 Officiel (ex: "UBTC/USDC") ---
       if (officialPairName !== protocolCoinName) {
-        this.register(officialPairName, assetId, baseToken.szDecimals);
-        this.nameToSpotPairId.set(officialPairName, market.name);
+        registerSpotName(officialPairName);
       }
 
       // --- ENREGISTREMENT 3 : Exception chirurgicale Hyperunit (ex: "BTC/USDC") ---
@@ -187,8 +239,7 @@ export class AssetRegistryService implements OnModuleInit, OnModuleDestroy {
           humanPairName !== officialPairName &&
           humanPairName !== protocolCoinName
         ) {
-          this.register(humanPairName, assetId, baseToken.szDecimals);
-          this.nameToSpotPairId.set(humanPairName, market.name);
+          registerSpotName(humanPairName);
         }
 
         // this.logger.debug(
@@ -200,6 +251,19 @@ export class AssetRegistryService implements OnModuleInit, OnModuleDestroy {
         // );
       }
     });
+  }
+
+  /**
+   * Symbole de chaque token, par son index.
+   *
+   * Sert à nommer un collatéral à l'écran et dans un journal. **Pas** à
+   * l'apparier : un solde se retrouve par `token`, pas par `coin` — deux
+   * tokens peuvent porter le même symbole, aucun ne partage un index.
+   */
+  private buildTokenSymbols(spotMeta: HLSpotMeta): void {
+    for (const token of spotMeta.tokens) {
+      this.tokenIndexToSymbol.set(token.index, token.name);
+    }
   }
 
   private buildBuilderDexMaps(spotMeta: HLSpotMeta) {
@@ -230,6 +294,8 @@ export class AssetRegistryService implements OnModuleInit, OnModuleDestroy {
     this.nameToSpotPairId.clear();
     this.assetIdToName.clear();
     this.nameToDexName.clear();
+    this.nameToCollateralToken.clear();
+    this.tokenIndexToSymbol.clear();
   }
 
   // --------------------------------------------------------
@@ -250,6 +316,23 @@ export class AssetRegistryService implements OnModuleInit, OnModuleDestroy {
 
   getSpotPairId(name: string): string | undefined {
     return this.nameToSpotPairId.get(name);
+  }
+
+  /**
+   * L'index du token dans lequel ce marché se règle, ou `undefined` quand le
+   * registre ne l'a pas résolu.
+   *
+   * `undefined` est une réponse à part entière : il dit « je ne sais pas », et
+   * l'appelant doit le traiter comme tel. Rendre USDC par défaut est
+   * exactement ce que ce registre remplace.
+   */
+  getCollateralToken(assetName: string): number | undefined {
+    return this.nameToCollateralToken.get(assetName);
+  }
+
+  /** Le symbole d'un token, pour l'affichage. */
+  getTokenSymbol(tokenIndex: number): string | undefined {
+    return this.tokenIndexToSymbol.get(tokenIndex);
   }
 
   getDexForAsset(assetName: string): string {

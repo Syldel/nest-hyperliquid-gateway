@@ -3,10 +3,47 @@ import { HyperliquidApiPrivateInfoService } from './hyperliquid-api-private-info
 import {
   AccountAbstractionMode,
   DecimalString,
+  hlPerpDexOf,
   HLClearinghouseState,
   HLSpotClearinghouseState,
 } from '@syldel/hl-shared-types';
 import { AssetRegistryService } from './asset-registry.service';
+
+/**
+ * Ce que le gateway sait du collatéral d'un marché, **et de ce qu'il ignore**.
+ *
+ * Les trois cas sont distincts parce que leurs remèdes le sont : approvisionner
+ * le compte, corriger le nom du marché, ou attendre que le registre soit
+ * synchronisé. Les réduire à un nombre les rendrait indiscernables — et `'0'`,
+ * sur un calcul de taille d'ordre, est le pire des trois à confondre.
+ *
+ * ⚠️ Ce type traverse HTTP jusqu'au bot. Il vivra dans `hl-shared-types` dès
+ * que le bot le consommera (étape B3) ; le laisser ici en attendant évite une
+ * release pour un contrat que personne n'utilise encore.
+ */
+export type CollateralBalance =
+  | {
+      status: 'ok';
+      mode: AccountAbstractionMode;
+      collateral: string;
+      /** `null` quand l'appelant a imposé un symbole plutôt qu'un index. */
+      collateralToken: number | null;
+      total: DecimalString;
+      used: DecimalString;
+    }
+  /** Collatéral identifié, mais le compte n'en porte aucune ligne. */
+  | {
+      status: 'no-balance-entry';
+      mode: AccountAbstractionMode;
+      collateral: string;
+      collateralToken: number | null;
+    }
+  /** Le registre ne sait pas dans quoi ce marché se règle. */
+  | {
+      status: 'unknown-collateral';
+      mode: AccountAbstractionMode;
+      asset: string;
+    };
 
 @Injectable()
 export class HyperliquidCollateralService {
@@ -97,58 +134,100 @@ export class HyperliquidCollateralService {
 
   /**
    * Récupère le solde du collatéral requis pour trader un actif donné (Routage + Micro-cache).
+   *
+   * ⚠️ Rien n'y rend `'0'` par défaut. Un zéro dit « tu n'as rien » ; il ne doit
+   * jamais dire « je n'ai pas trouvé ». La distinction n'est pas cosmétique :
+   * cette valeur dimensionne des ordres (`hl-protection.service`), et un
+   * collatéral non résolu rendu `'0'` fait calculer une taille sur un capital
+   * qui n'a jamais été lu.
    */
   async getCollateralBalance(
     asset: string,
     collateral?: string,
     isTestnet: boolean = false,
-  ): Promise<{
-    mode: AccountAbstractionMode;
-    total: DecimalString;
-    used: DecimalString;
-    collateral: string;
-  }> {
+  ): Promise<CollateralBalance> {
     const assetName = asset;
     const mode = await this.getAccountMode(isTestnet);
 
-    const dex = this.assetRegistry.getDexForAsset(assetName);
-    const dexLower = dex?.toLowerCase();
+    // Le collatéral se **dérive** du catalogue : `collateralToken` pour un
+    // perp, le token de quote pour une paire spot. La table en dur qui vivait
+    // ici (`hyna → USDE`, `cash → USDT`, sinon USDC) n'a pas été corrigée, elle
+    // a été supprimée : elle ne couvrait que 2 des 10 dex déployés, et ces deux
+    // dex ont été éteints en juin et août 2026.
+    const tokenIndex = this.assetRegistry.getCollateralToken(assetName);
 
-    let finalCollateral = collateral;
-    if (!finalCollateral) {
-      if (dexLower === 'hyna') finalCollateral = 'USDE';
-      else if (dexLower === 'cash') finalCollateral = 'USDT';
-      else finalCollateral = 'USDC';
+    // Un `collateral` explicite est le seul cas où l'appariement se fait par
+    // symbole : c'est ce que l'appelant a nommé, et c'est donc sa
+    // responsabilité. Sans lui, l'appariement passe par l'index — deux tokens
+    // peuvent partager un symbole, aucun ne partage un index.
+    const override = collateral?.toUpperCase();
+    if (!override && tokenIndex === undefined) {
+      return { status: 'unknown-collateral', mode, asset: assetName };
     }
-    const collateralUpper = finalCollateral.toUpperCase();
+
+    const symbol =
+      override ??
+      this.assetRegistry.getTokenSymbol(tokenIndex!) ??
+      `token#${tokenIndex}`;
+    const collateralToken = override ? null : tokenIndex!;
 
     // ─── L'EXCEPTION : MARCHÉ PERP EN MODE CLOISONNÉ ─────────────────────────
+    //
+    // `hlPerpDexOf` plutôt que `isPerp` du registre : celui-ci définit
+    // `isPerp = !isSpot && !isBuilder`, si bien qu'un HIP-3 (`cash:TSLA`) n'en
+    // était pas un et prenait la branche spot — précisément les dex dont le
+    // collatéral n'est pas de l'USDC. La doc est explicite pour le mode
+    // Standard : « separate perp and spot balances, separate DEX balances ».
+    const perpDex = hlPerpDexOf(assetName);
     if (
       mode !== 'unifiedAccount' &&
       mode !== 'portfolioMargin' &&
-      this.assetRegistry.isPerp(assetName)
+      perpDex !== null
     ) {
-      const perpState = await this.getCachedPerpState(dex, isTestnet);
+      const perpState = await this.getCachedPerpState(perpDex, isTestnet);
+      const summary = perpState?.marginSummary;
+
+      if (!summary) {
+        return {
+          status: 'no-balance-entry',
+          mode,
+          collateral: symbol,
+          collateralToken,
+        };
+      }
 
       return {
+        status: 'ok',
         mode,
-        collateral: collateralUpper,
-        total: perpState?.marginSummary?.accountValue || '0',
-        used: perpState?.marginSummary?.totalMarginUsed || '0',
+        collateral: symbol,
+        collateralToken,
+        total: summary.accountValue,
+        used: summary.totalMarginUsed,
       };
     }
 
     // ─── LE CAS GÉNÉRAL : UNIFIÉ OU MARCHÉ SPOT ──────────────────────────────
     const spotState = await this.getCachedSpotBalances(isTestnet);
-    const targetBalance = spotState?.balances?.find(
-      (b) => b.coin === collateralUpper,
+    const targetBalance = spotState?.balances?.find((balance) =>
+      override ? balance.coin === override : balance.token === collateralToken,
     );
 
+    if (!targetBalance) {
+      return {
+        status: 'no-balance-entry',
+        mode,
+        collateral: symbol,
+        collateralToken,
+      };
+    }
+
     return {
+      status: 'ok',
       mode,
-      collateral: collateralUpper,
-      total: targetBalance?.total || '0',
-      used: targetBalance?.hold || '0',
+      collateral: symbol,
+      collateralToken,
+      total: targetBalance.total,
+      used: targetBalance.hold,
     };
   }
 

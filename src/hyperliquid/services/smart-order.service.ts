@@ -293,12 +293,27 @@ export class SmartOrderService {
     const balanceInfo =
       await this.collateralService.getCollateralBalance(asset);
 
-    const accountValue = balanceInfo.total;
+    // Ne pas savoir dans quoi un marché se règle n'est pas un manque de fonds :
+    // approvisionner le compte n'y changerait rien. Les deux cas portaient le
+    // même message tant que le collatéral introuvable rendait `'0'`.
+    if (balanceInfo.status === 'unknown-collateral') {
+      throw new HyperliquidGatewayException(
+        'UNKNOWN_COLLATERAL',
+        `Cannot determine which asset "${balanceInfo.asset}" settles in`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
 
-    if (!this.decimalUtils.isPositive(accountValue)) {
+    const accountValue =
+      balanceInfo.status === 'ok' ? balanceInfo.total : undefined;
+
+    if (
+      accountValue === undefined ||
+      !this.decimalUtils.isPositive(accountValue)
+    ) {
       throw new HyperliquidGatewayException(
         'INSUFFICIENT_COLLATERAL',
-        'No USDC collateral available on Hyperliquid account',
+        `No ${balanceInfo.collateral} collateral available on Hyperliquid account`,
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
     }

@@ -295,7 +295,9 @@ describe('SmartOrderService', () => {
   describe('resolveQuoteFromPercent', () => {
     it('should compute quote amount from percent', async () => {
       getCollateralBalance.mockResolvedValue({
+        status: 'ok',
         mode: 'unifiedAccount',
+        collateralToken: 0,
         total: '1000',
         used: '650',
         collateral: 'USDC',
@@ -311,7 +313,9 @@ describe('SmartOrderService', () => {
 
     it('should support decimal percentages', async () => {
       getCollateralBalance.mockResolvedValue({
+        status: 'ok',
         mode: 'unifiedAccount',
+        collateralToken: 0,
         total: '1234.56',
         used: '650',
         collateral: 'USDC',
@@ -342,7 +346,9 @@ describe('SmartOrderService', () => {
 
     it('should throw if account value is not positive', async () => {
       getCollateralBalance.mockResolvedValue({
+        status: 'ok',
         mode: 'unifiedAccount',
+        collateralToken: 0,
         total: '0',
         used: '650',
         collateral: 'USDC',
