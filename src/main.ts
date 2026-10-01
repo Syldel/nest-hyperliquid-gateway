@@ -16,7 +16,11 @@ async function bootstrap() {
   // INFO: Avec origin: '*', il faut normalement mettre => credentials: false
   const allowedOrigins: string[] = isProduction
     ? (process.env.ALLOWED_ORIGINS?.split(',').map((o) => o.trim()) ?? [])
-    : ['http://localhost:3000', 'http://localhost:3001'];
+    : [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://localhost:4200',
+      ];
 
   app.enableCors({
     origin: (
