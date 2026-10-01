@@ -2,48 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { HyperliquidApiPrivateInfoService } from './hyperliquid-api-private-info.service';
 import {
   AccountAbstractionMode,
-  DecimalString,
+  CollateralBalance,
   hlPerpDexOf,
   HLClearinghouseState,
   HLSpotClearinghouseState,
 } from '@syldel/hl-shared-types';
 import { AssetRegistryService } from './asset-registry.service';
-
-/**
- * Ce que le gateway sait du collatéral d'un marché, **et de ce qu'il ignore**.
- *
- * Les trois cas sont distincts parce que leurs remèdes le sont : approvisionner
- * le compte, corriger le nom du marché, ou attendre que le registre soit
- * synchronisé. Les réduire à un nombre les rendrait indiscernables — et `'0'`,
- * sur un calcul de taille d'ordre, est le pire des trois à confondre.
- *
- * ⚠️ Ce type traverse HTTP jusqu'au bot. Il vivra dans `hl-shared-types` dès
- * que le bot le consommera (étape B3) ; le laisser ici en attendant évite une
- * release pour un contrat que personne n'utilise encore.
- */
-export type CollateralBalance =
-  | {
-      status: 'ok';
-      mode: AccountAbstractionMode;
-      collateral: string;
-      /** `null` quand l'appelant a imposé un symbole plutôt qu'un index. */
-      collateralToken: number | null;
-      total: DecimalString;
-      used: DecimalString;
-    }
-  /** Collatéral identifié, mais le compte n'en porte aucune ligne. */
-  | {
-      status: 'no-balance-entry';
-      mode: AccountAbstractionMode;
-      collateral: string;
-      collateralToken: number | null;
-    }
-  /** Le registre ne sait pas dans quoi ce marché se règle. */
-  | {
-      status: 'unknown-collateral';
-      mode: AccountAbstractionMode;
-      asset: string;
-    };
 
 @Injectable()
 export class HyperliquidCollateralService {

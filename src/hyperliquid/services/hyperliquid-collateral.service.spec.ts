@@ -120,6 +120,13 @@ describe('HyperliquidCollateralService.getCollateralBalance', () => {
     });
   });
 
+  /**
+   * ⚠️ `'default'` est une valeur de `AccountAbstractionMode`, mais **laquelle**
+   * de ses valeurs correspond au mode « Manual / Standard » de la doc n'a pas
+   * été vérifiée : le compte de développement est unifié, aucune mesure ne
+   * pouvait le dire. Ces tests n'en dépendent pas — la branche se déclenche sur
+   * « ni unifié ni portfolio margin », quel que soit le nom de l'autre cas.
+   */
   describe('standard (siloed) mode', () => {
     // Le défaut corrigé : `isPerp` du registre valait `!isSpot && !isBuilder`,
     // donc un HIP-3 (`cash:TSLA`) n'en était pas un et prenait la branche spot
@@ -127,7 +134,7 @@ describe('HyperliquidCollateralService.getCollateralBalance', () => {
     // explicite : en mode Standard, « separate perp and spot balances,
     // separate DEX balances ».
     it('reads the perp state of a HIP-3 market, not the spot balances', async () => {
-      const service = buildService({ mode: 'manual' });
+      const service = buildService({ mode: 'default' });
 
       await expect(
         service.getCollateralBalance('cash:TSLA'),
@@ -135,7 +142,7 @@ describe('HyperliquidCollateralService.getCollateralBalance', () => {
     });
 
     it('reads the perp state of a main-dex market too', async () => {
-      const service = buildService({ mode: 'manual' });
+      const service = buildService({ mode: 'default' });
 
       await expect(service.getCollateralBalance('BTC')).resolves.toMatchObject({
         status: 'ok',
