@@ -127,6 +127,19 @@ export class HyperliquidCollateralService {
     const assetName = asset;
     const mode = await this.getAccountMode(isTestnet);
 
+    // Deux modes dont ce gateway ne sait pas lire le collatéral, et qu'il
+    // refuse plutôt que d'approcher. Le refus vient **avant** toute résolution :
+    // rendre un collatéral puis un montant faux serait pire que ne rien rendre.
+    //
+    // `portfolioMargin` réunit plusieurs actifs en un portefeuille unique ; lire
+    // une seule ligne le sous-estimerait, et les agréger exigerait de valoriser
+    // HYPE et BTC en dollars — une source de prix dans un calcul de collatéral.
+    // `dexAbstraction` est arrêté par l'exchange : la doc le décrit, aucun
+    // compte ne permet de l'éprouver.
+    if (mode === 'portfolioMargin' || mode === 'dexAbstraction') {
+      return { status: 'unsupported-mode', mode, asset: assetName };
+    }
+
     // Le collatéral se **dérive** du catalogue : `collateralToken` pour un
     // perp, le token de quote pour une paire spot. La table en dur qui vivait
     // ici (`hyna → USDE`, `cash → USDT`, sinon USDC) n'a pas été corrigée, elle
@@ -156,12 +169,13 @@ export class HyperliquidCollateralService {
     // était pas un et prenait la branche spot — précisément les dex dont le
     // collatéral n'est pas de l'USDC. La doc est explicite pour le mode
     // Standard : « separate perp and spot balances, separate DEX balances ».
+    //
+    // `portfolioMargin` ne figure plus dans ce test : ce mode est refusé plus
+    // haut. Ne reste donc que la liste blanche `unifiedAccount`, et tout le
+    // reste — connu ou futur — tombe du côté cloisonné, qui est le côté
+    // prudent : il rend **moins** de capital, jamais plus.
     const perpDex = hlPerpDexOf(assetName);
-    if (
-      mode !== 'unifiedAccount' &&
-      mode !== 'portfolioMargin' &&
-      perpDex !== null
-    ) {
+    if (mode !== 'unifiedAccount' && perpDex !== null) {
       const perpState = await this.getCachedPerpState(perpDex, isTestnet);
       const summary = perpState?.marginSummary;
 

@@ -121,11 +121,10 @@ describe('HyperliquidCollateralService.getCollateralBalance', () => {
   });
 
   /**
-   * ⚠️ `'default'` est une valeur de `AccountAbstractionMode`, mais **laquelle**
-   * de ses valeurs correspond au mode « Manual / Standard » de la doc n'a pas
-   * été vérifiée : le compte de développement est unifié, aucune mesure ne
-   * pouvait le dire. Ces tests n'en dépendent pas — la branche se déclenche sur
-   * « ni unifié ni portfolio margin », quel que soit le nom de l'autre cas.
+   * `'default'` désigne bien un mode **cloisonné**, et non un synonyme
+   * d'unifié : vérifié le 2026-10-01 par une transition observée sur le compte
+   * de développement, qui est passé de `"default"` à `"unifiedAccount"` en
+   * acceptant la modale d'Hyperliquid — deux valeurs, deux états.
    */
   describe('standard (siloed) mode', () => {
     // Le défaut corrigé : `isPerp` du registre valait `!isSpot && !isBuilder`,
@@ -157,6 +156,61 @@ describe('HyperliquidCollateralService.getCollateralBalance', () => {
 
       await expect(service.getCollateralBalance('BTC')).resolves.toMatchObject({
         total: '1000',
+      });
+    });
+  });
+
+  /**
+   * ⚠️ Ces deux modes n'ont pas pu être **exercés** : le compte de
+   * développement est unifié, et `dexAbstraction` est arrêté par l'exchange.
+   * Ce qui est figé ici, c'est donc que le gateway **refuse** — pas que refuser
+   * soit le bon comportement sur un vrai compte en portfolio margin. C'est
+   * précisément pourquoi le refus a été préféré à une implémentation que
+   * personne n'aurait pu contredire.
+   */
+  describe('modes the gateway does not model', () => {
+    // Portfolio margin réunit HYPE, BTC, USDC et USDT en un portefeuille
+    // unique : rendre la ligne d'un seul actif sous-estimerait le capital.
+    it('refuses to answer under portfolio margin', async () => {
+      const service = buildService({ mode: 'portfolioMargin' });
+
+      await expect(service.getCollateralBalance('BTC')).resolves.toEqual({
+        status: 'unsupported-mode',
+        mode: 'portfolioMargin',
+        asset: 'BTC',
+      });
+    });
+
+    it('refuses to answer under the discontinued dex abstraction', async () => {
+      const service = buildService({ mode: 'dexAbstraction' });
+
+      await expect(service.getCollateralBalance('cash:TSLA')).resolves.toEqual({
+        status: 'unsupported-mode',
+        mode: 'dexAbstraction',
+        asset: 'cash:TSLA',
+      });
+    });
+
+    // Le refus précède toute résolution : rendre un collatéral puis un montant
+    // faux serait pire que ne rien rendre. Un actif dont le registre ignore le
+    // collatéral doit donc sortir sur le mode, pas sur `unknown-collateral`.
+    it('refuses on the mode before it even resolves the collateral', async () => {
+      const service = buildService({
+        mode: 'portfolioMargin',
+        collateralByAsset: {},
+      });
+
+      await expect(service.getCollateralBalance('NOPE')).resolves.toMatchObject({
+        status: 'unsupported-mode',
+      });
+    });
+
+    // Et le refus ne déborde pas : un mode cloisonné répond normalement.
+    it('leaves every other mode answering as before', async () => {
+      const service = buildService({ mode: 'default' });
+
+      await expect(service.getCollateralBalance('BTC')).resolves.toMatchObject({
+        status: 'ok',
       });
     });
   });
