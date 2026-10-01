@@ -107,6 +107,16 @@ export class HyperliquidInfoController {
    * - markPrice, oraclePrice, midPrice
    * - funding, openInterest
    *
+   * ⚠️ `midPrice` et `premium` valent **`null`** sur un marché délisté : c'est
+   * ce que l'exchange rend, et le gateway le propage au lieu de l'écraser en
+   * `undefined`. Les deux absences ne disent pas la même chose — `null` signale
+   * que l'exchange n'a pas de prix milieu, `undefined` que la ligne de contexte
+   * manquait en face de l'entrée d'univers. Relevé le 2026-10-01 : 75 contextes
+   * sur 363, tous délistés. `markPrice`, lui, est toujours présent.
+   *
+   * Un consommateur doit donc écarter le `null` avant de calculer, pas le
+   * convertir : `Number(null)` rend `0`, et `0` tranche là où `NaN` s'abstient.
+   *
    * (type: 'metaAndAssetCtxs')
    */
   @Get('perp-markets')

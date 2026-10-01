@@ -58,7 +58,16 @@ const SPOT_META: HLSpotMeta = {
 
 function perpMeta(names: string[], collateralToken?: number): HLPerpMeta {
   return {
-    universe: names.map((name) => ({ name, szDecimals: 2, maxLeverage: 20 })),
+    // `marginTableId` égale `maxLeverage` sur les quatre dex HIP-3 relevés
+    // (`xyz` 30/30, `para` 20/20, `mkts` 25/25, `io` 6/6) ; le dex principal,
+    // lui, ne suit pas cette règle (BTC : 56 pour 40x). Ici n'importe quelle
+    // valeur ferait l'affaire — mais une valeur plausible coûte le même prix.
+    universe: names.map((name) => ({
+      name,
+      szDecimals: 2,
+      maxLeverage: 20,
+      marginTableId: 20,
+    })),
     marginTables: [],
     ...(collateralToken !== undefined && { collateralToken }),
   };
