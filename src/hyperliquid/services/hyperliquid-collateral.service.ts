@@ -104,6 +104,20 @@ export class HyperliquidCollateralService {
    * cette valeur dimensionne des ordres (`hl-protection.service`), et un
    * collatéral non résolu rendu `'0'` fait calculer une taille sur un capital
    * qui n'a jamais été lu.
+   *
+   * Le test de la condition est une **liste blanche** : seuls `unifiedAccount`
+   * et `portfolioMargin` lisent le spot. Ce n'est pas un détail de style — le
+   * sens de l'erreur n'est pas symétrique. Un compte unifié lu comme cloisonné
+   * rend **moins** de capital (ordre sous-dimensionné, ou refusé) ; un compte
+   * cloisonné lu comme unifié en rend **plus** qu'il n'en est mobilisable, donc
+   * un ordre surdimensionné. Une valeur inconnue doit tomber du côté prudent.
+   *
+   * `"default"` et `"unifiedAccount"` sont bien deux modes distincts, vérifié
+   * le 2026-10-01 par une transition observée : le compte est passé de l'un à
+   * l'autre en acceptant la modale d'Hyperliquid, et la réponse de cette
+   * méthode pour `BTC` est passée de `0.0` (état perp) à `0.01079182` (spot
+   * USDC) **sans aucune modification de code**.
+   * Voir `docs/account-abstraction.md`.
    */
   async getCollateralBalance(
     asset: string,
