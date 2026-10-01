@@ -200,9 +200,11 @@ describe('HyperliquidCollateralService.getCollateralBalance', () => {
         collateralByAsset: {},
       });
 
-      await expect(service.getCollateralBalance('NOPE')).resolves.toMatchObject({
-        status: 'unsupported-mode',
-      });
+      await expect(service.getCollateralBalance('NOPE')).resolves.toMatchObject(
+        {
+          status: 'unsupported-mode',
+        },
+      );
     });
 
     // Et le refus ne déborde pas : un mode cloisonné répond normalement.

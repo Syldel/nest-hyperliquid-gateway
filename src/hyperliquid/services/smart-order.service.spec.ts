@@ -360,6 +360,39 @@ describe('SmartOrderService', () => {
         }),
       ).rejects.toThrow();
     });
+
+    /**
+     * Les trois refus portent des codes distincts, et ce n'est pas cosmétique :
+     * ils désignent trois suites différentes. Approvisionner le compte ne répare
+     * pas un marché dont on ignore le règlement, et changer de mode de compte ne
+     * répare ni l'un ni l'autre. Tant que le collatéral introuvable rendait
+     * `'0'`, les trois sortaient sous « fonds insuffisants ».
+     */
+    it('tells an unresolved collateral apart from a lack of funds', async () => {
+      getCollateralBalance.mockResolvedValue({
+        status: 'unknown-collateral',
+        mode: 'unifiedAccount',
+        asset: 'NOPE',
+      });
+
+      await expect(
+        service.resolveQuoteFromPercent({ percent: '0.1', asset: 'NOPE' }),
+      ).rejects.toMatchObject({ response: { error: 'UNKNOWN_COLLATERAL' } });
+    });
+
+    it('tells an unreadable account mode apart from a lack of funds', async () => {
+      getCollateralBalance.mockResolvedValue({
+        status: 'unsupported-mode',
+        mode: 'portfolioMargin',
+        asset: 'BTC',
+      });
+
+      await expect(
+        service.resolveQuoteFromPercent({ percent: '0.1', asset: 'BTC' }),
+      ).rejects.toMatchObject({
+        response: { error: 'UNSUPPORTED_ACCOUNT_MODE' },
+      });
+    });
   });
 
   describe('placeBatchProtectiveOrders', () => {

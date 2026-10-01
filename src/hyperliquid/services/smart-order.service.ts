@@ -304,6 +304,20 @@ export class SmartOrderService {
       );
     }
 
+    // Un mode non modélisé n'est pas non plus un manque de fonds : le capital
+    // existe peut-être, c'est ce gateway qui ne sait pas le lire. Dimensionner
+    // un ordre dessus reviendrait à inventer le nombre qu'on vient de refuser.
+    if (balanceInfo.status === 'unsupported-mode') {
+      throw new HyperliquidGatewayException(
+        'UNSUPPORTED_ACCOUNT_MODE',
+        `Cannot read collateral while the account is in ${balanceInfo.mode} mode`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+
+    // À partir d'ici il ne reste que `ok` et `no-balance-entry`, et les deux
+    // portent un `collateral` : c'est ce qui permet de le nommer dans le
+    // message d'erreur plutôt que d'y écrire « USDC » en dur.
     const accountValue =
       balanceInfo.status === 'ok' ? balanceInfo.total : undefined;
 
