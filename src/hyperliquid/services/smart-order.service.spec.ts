@@ -305,10 +305,40 @@ describe('SmartOrderService', () => {
 
       const result = await service.resolveQuoteFromPercent({
         percent: '0.1',
+        asset: 'BTC',
         isTestnet: false,
       });
 
       expect(result).toBe('100');
+    });
+
+    /**
+     * Le paramètre `asset` n'est pas décoratif : depuis que le collatéral se
+     * dérive du catalogue, c'est lui qui détermine **dans quel actif** le solde
+     * est lu. Un marché `cash:TSLA` ne se règle pas dans le même token que
+     * `BTC`.
+     *
+     * Ces tests l'omettaient — le mock ignorait l'argument, donc ils passaient
+     * avec `asset === undefined`, une forme d'appel qui ne peut pas exister en
+     * production. Seul le compilateur le voyait, et ses alertes se perdaient
+     * dans sept autres.
+     */
+    it('passes the asset through, since it decides which balance is read', async () => {
+      getCollateralBalance.mockResolvedValue({
+        status: 'ok',
+        mode: 'unifiedAccount',
+        collateralToken: 2,
+        total: '1000',
+        used: '0',
+        collateral: 'USDT',
+      });
+
+      await service.resolveQuoteFromPercent({
+        percent: '0.1',
+        asset: 'cash:TSLA',
+      });
+
+      expect(getCollateralBalance).toHaveBeenCalledWith('cash:TSLA');
     });
 
     it('should support decimal percentages', async () => {
@@ -323,6 +353,7 @@ describe('SmartOrderService', () => {
 
       const result = await service.resolveQuoteFromPercent({
         percent: '0.25',
+        asset: 'BTC',
       });
 
       expect(result).toBe('308.64');
@@ -332,6 +363,7 @@ describe('SmartOrderService', () => {
       await expect(
         service.resolveQuoteFromPercent({
           percent: '0',
+          asset: 'BTC',
         }),
       ).rejects.toThrow();
     });
@@ -340,6 +372,7 @@ describe('SmartOrderService', () => {
       await expect(
         service.resolveQuoteFromPercent({
           percent: '1.5',
+          asset: 'BTC',
         }),
       ).rejects.toThrow();
     });
@@ -357,6 +390,7 @@ describe('SmartOrderService', () => {
       await expect(
         service.resolveQuoteFromPercent({
           percent: '0.1',
+          asset: 'BTC',
         }),
       ).rejects.toThrow();
     });
@@ -626,8 +660,8 @@ describe('SmartOrderService', () => {
         {
           assetName,
           isBuy,
-          tp: [{ kind: 'tp', price: '1103', sz: '2' }],
-          sl: [{ kind: 'sl', price: '1068.1', sz: '2' }],
+          tp: [{ price: '1103', sz: '2' }],
+          sl: [{ price: '1068.1', sz: '2' }],
         },
         false,
       );
@@ -664,7 +698,7 @@ describe('SmartOrderService', () => {
         {
           assetName,
           isBuy,
-          tp: [{ kind: 'tp', price: '1104', sz: '2' }],
+          tp: [{ price: '1104', sz: '2' }],
         },
         false,
       );
@@ -687,11 +721,11 @@ describe('SmartOrderService', () => {
         assetName,
         isBuy,
         tp: [
-          { kind: 'tp', price: '9100', sz: '0.6' }, // update TP 101
-          { kind: 'tp', price: '9200', sz: '0.2' }, // new TP to create
+          { price: '9100', sz: '0.6' }, // update TP 101
+          { price: '9200', sz: '0.2' }, // new TP to create
         ],
         sl: [
-          { kind: 'sl', price: '7900', sz: '0.25' }, // update SL 103
+          { price: '7900', sz: '0.25' }, // update SL 103
         ],
       };
 
@@ -768,10 +802,10 @@ describe('SmartOrderService', () => {
       const desired = {
         assetName,
         isBuy,
-        tp: [{ kind: 'tp', price: '9100', sz: '0.6' }],
+        tp: [{ price: '9100', sz: '0.6' }],
         sl: [
-          { kind: 'sl', price: '7900', sz: '0.25' },
-          { kind: 'sl', price: '7600', sz: '0.35' },
+          { price: '7900', sz: '0.25' },
+          { price: '7600', sz: '0.35' },
         ],
       };
 
@@ -849,10 +883,10 @@ describe('SmartOrderService', () => {
       const desired = {
         assetName,
         isBuy,
-        tp: [{ kind: 'tp', price: '8200', sz: '0.6' }],
+        tp: [{ price: '8200', sz: '0.6' }],
         sl: [
-          { kind: 'sl', price: '9100', sz: '0.25' },
-          { kind: 'sl', price: '9200', sz: '0.35' },
+          { price: '9100', sz: '0.25' },
+          { price: '9200', sz: '0.35' },
         ],
       };
 
