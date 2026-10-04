@@ -46,7 +46,28 @@ Première partie, et **typé** — ce que la doc en prose n'est pas :
 
 [`hyperliquid-dex/hyperliquid-python-sdk`](https://github.com/hyperliquid-dex/hyperliquid-python-sdk),
 `hyperliquid/utils/types.py` : des `TypedDict`, des `Union`, des `Literal`, des `Optional`.
-C'est le seul SDK que la page d'API de la documentation présente comme le sien.
+
+**Sur quoi repose le mot « officiel »**, parce que le nom de l'organisation n'y suffit pas —
+n'importe qui peut créer `hyperliquid-dex` :
+
+- la **page d'API de la documentation** ne se contente pas de le lister, elle le
+  **distingue** : les trois autres bibliothèques y portent une attribution communautaire
+  explicite (« written by community member », « written by members of the community »),
+  celle-ci non ;
+- **PyPI** le corrobore par une autre chaîne : le paquet `hyperliquid-python-sdk` déclare
+  `author: "Hyperliquid"` et `author_email: "hello@hyperliquid.xyz"` — le domaine de
+  l'exchange, celui de `api.hyperliquid.xyz`. Sa version 0.24.0 est publiée le
+  2026-06-04T19:47Z, à deux minutes du `pushed_at` du dépôt GitHub : les deux pistes mènent
+  au même artefact.
+
+⚠️ Ce qui ne l'établit **pas**, et qu'il ne faut pas invoquer : l'organisation GitHub rend
+`is_verified: false` et déclare `blog: hyperfoundation.org`. GitHub n'atteste donc pas son
+domaine, et son `name: "Hyperliquid"` est déclaratif — exactement ce qu'une imitation
+afficherait. La conclusion est portée par la doc de l'exchange et par PyPI, pas par
+l'organisation.
+
+Et ce qui reste non vérifié : **qui le maintient au quotidien**. « Publié par l'exchange »
+n'est pas « suivi par l'équipe ».
 
 - **Tranche les questions de forme** que la doc laisse en suspens : unions discriminées,
   champs propres à une variante, valeurs énumérées, nullité. C'est de l'information de
