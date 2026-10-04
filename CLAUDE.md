@@ -35,6 +35,11 @@ signe.
 
 ## Travailler ici
 
+- **Avant d'affirmer ce que l'exchange rend**, lire
+  [docs/sources.md](docs/sources.md) : ce que la mesure, la doc officielle et les **SDK
+  officiels** peuvent établir chacun, et pourquoi aucun ne remplace les autres. Les types de
+  `@syldel/hl-shared-types` sont des affirmations sur l'API ; une affirmation fausse ne se
+  voit pas, elle se paie plus tard.
 - **Ne jamais committer, tagger ou pousser sans demande explicite** : proposer un message
   de commit conventionnel, en anglais, et laisser l'utilisateur l'exécuter — comme dans les
   autres dépôts.
@@ -51,9 +56,17 @@ signe.
 - Les règles eslint du dépôt s'appliquent aussi aux specs (`no-unsafe-*`) : typer les
   doubles plutôt que de passer par `any` (`as never` pour un argument sans intérêt).
 
+## Vérifier avant d'annoncer
+
+`npm run typecheck` (`tsc --noEmit`) couvre ce que `nest build` laisse de côté : son
+`tsconfig.build.json` exclut `**/*spec.ts`, donc une erreur de type dans un spec pouvait y
+vivre indéfiniment. Huit l'ont fait, et ts-jest n'en voyait qu'une partie — une suite verte
+ne dit rien de ce que le compilateur refuse. Les deux se lancent, pas l'un ou l'autre.
+
 ## ⚠️ Connu et non traité
 
-- `npx tsc -p tsconfig.json --noEmit` échoue sur `smart-order.service.spec.ts` : la
-  signature de `resolveQuoteFromPercent` a gagné un paramètre `asset` (commit `078c6a3`)
-  sans que le spec suive. Le build de production (`tsconfig.build.json`) est propre, et jest
-  passe (il ne vérifie pas les types).
+- `portfolioMargin` et `dexAbstraction` sont **refusés** plutôt que modélisés par
+  `getCollateralBalance` (statut `unsupported-mode`). Le refus est éprouvé ; qu'il soit le
+  bon comportement sur un vrai compte en portfolio margin ne l'est pas — ces deux modes
+  n'ont jamais pu être exercés. Voir
+  [docs/account-abstraction.md](docs/account-abstraction.md).
