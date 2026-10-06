@@ -50,6 +50,31 @@ export class GetCandlesQueryDto {
   endTime?: Timestamp;
 }
 
+/**
+ * ⚠️ `fundingHistory` prend ses paramètres **à plat** dans le corps envoyé à
+ * Hyperliquid, contrairement à `candleSnapshot` qui imbrique les siens sous une
+ * clé `req`. Deux endpoints voisins, deux formes : la requête est construite
+ * dans `getFundingHistory`, ce DTO ne décrit que la façade HTTP du gateway.
+ */
+export class GetFundingHistoryQueryDto {
+  /** Nom du marché, préfixe de dex compris (`BTC`, `xyz:XYZ100`). */
+  @IsString()
+  @IsNotEmpty()
+  coin!: string;
+
+  /** Inclusif, en millisecondes. Requis par Hyperliquid. */
+  @IsNumber()
+  @IsNotEmpty()
+  @Type(() => Number)
+  startTime!: Timestamp;
+
+  /** Inclusif. Par défaut, l'instant courant. */
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  endTime?: Timestamp;
+}
+
 export class GetL2BookQueryDto {
   @IsString()
   coin!: string;

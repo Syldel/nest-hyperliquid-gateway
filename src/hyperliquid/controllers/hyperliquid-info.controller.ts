@@ -12,6 +12,7 @@ import { MarketMetaCacheService } from '../services/market-meta-cache.service';
 import {
   GetActiveAssetDataQueryDto,
   GetCandlesQueryDto,
+  GetFundingHistoryQueryDto,
   GetL2BookQueryDto,
 } from '../dtos/hyperliquid-info.query.dto';
 import { UserAuthGuard } from '../../common/guards/user-auth.guard';
@@ -182,6 +183,18 @@ export class HyperliquidInfoController {
   @Get('candles')
   async getCandles(@Query() query: GetCandlesQueryDto) {
     return this.publicInfoService.getCandleSnapshot(query);
+  }
+
+  /**
+   * Récupère l'historique de funding d'un marché : un point par heure.
+   *
+   * Sans mémoire : une requête reçue vaut un appel à Hyperliquid. La fraîcheur
+   * appartient à l'appelant — voir `getFundingHistory` pour pourquoi, et pour
+   * les trois significations de `"0.0"` qu'il ne faut surtout pas filtrer ici.
+   */
+  @Get('funding-history')
+  async getFundingHistory(@Query() query: GetFundingHistoryQueryDto) {
+    return this.publicInfoService.getFundingHistory(query);
   }
 
   /**

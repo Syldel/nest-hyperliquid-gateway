@@ -15,6 +15,8 @@ import {
   HLL2BookResponse,
   HLNSigFigsOptions,
   HLMantissaOptions,
+  HLFundingHistoryEntry,
+  HLFundingHistoryRequest,
 } from '@syldel/hl-shared-types';
 import { HyperliquidApiBaseInfoService } from './hyperliquid-api-base-info.service';
 
@@ -237,6 +239,56 @@ export class HyperliquidApiPublicInfoService extends HyperliquidApiBaseInfoServi
     };
 
     return this.executeInfo<CandleSnapshot[]>(body);
+  }
+
+  /**
+   * Récupère l'historique de funding d'un marché : un point **par heure**,
+   * portant le taux réellement appliqué et la prime moyenne de cette heure.
+   *
+   * C'est, au 2026-10-06, le seul endpoint d'information qui rende une **série
+   * temporelle** d'un champ de contexte de marché — il n'en existe aucun pour
+   * l'intérêt ouvert ni pour les prix d'impact.
+   *
+   * ⚠️ Les paramètres sont **à plat** dans le corps, contrairement à
+   * `candleSnapshot` qui imbrique les siens sous `req`. Deux endpoints voisins,
+   * deux formes ; se tromper ici donne un appel refusé, pas une réponse vide.
+   *
+   * ⚠️ Cette route ne garde **rien** et ne déclenche **rien** : une requête
+   * reçue vaut un appel à Hyperliquid. La fraîcheur appartient à l'appelant,
+   * comme pour toutes les lectures d'exchange de ce gateway. Côté bot, le
+   * funding ne changeant qu'à l'heure, demander plus d'une fois par heure ne
+   * rapporte rien.
+   *
+   * ⚠️ Ce que le gateway ne fait pas, et qu'il ne faut pas lui faire faire :
+   * filtrer les entrées à `"0.0"`. Ce zéro a **trois** significations qu'aucune
+   * donnée de cette réponse ne distingue — marché délisté, marché vivant sur un
+   * dex à multiplicateur nul (`flx`, `vntl`), ou heure réellement sans
+   * financement. Les écarter effacerait l'information qui permet de trancher.
+   * Voir l'en-tête de `HLFundingHistoryEntry`.
+   *
+   * @param req - `coin` (préfixe de dex compris), `startTime` en millisecondes
+   *   et inclusif, `endTime` optionnel.
+   * @returns Les entrées horaires, de la plus ancienne à la plus récente.
+   */
+  async getFundingHistory(
+    req: HLFundingHistoryRequest,
+  ): Promise<HLFundingHistoryEntry[]> {
+    // `endTime` posé tel quel, y compris absent : `executeInfo` sérialise avec
+    // `JSON.stringify`, qui **supprime** les clés valant `undefined`. Hyperliquid
+    // le remplace alors par l'instant courant, ce qui est le comportement voulu.
+    //
+    // Il y avait ici un `if (req.endTime !== undefined)`. Une mutation a montré
+    // qu'il ne changeait rien au corps envoyé : garder une garde qu'aucun test
+    // ne peut distinguer, c'est inviter le prochain lecteur à croire qu'elle
+    // protège quelque chose.
+    const body: Record<string, unknown> = {
+      type: 'fundingHistory',
+      coin: req.coin,
+      startTime: req.startTime,
+      endTime: req.endTime,
+    };
+
+    return this.executeInfo<HLFundingHistoryEntry[]>(body);
   }
 
   /**
