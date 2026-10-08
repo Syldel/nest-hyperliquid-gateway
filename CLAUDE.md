@@ -33,6 +33,35 @@ la garantie qu'un émetteur croira un jour avoir posé autre chose que ce qui l'
 et la décision de ne pas prendre de dépendance tierce ici — le gateway est le processus qui
 signe.
 
+## La troisième règle : un marché standard ne prédit pas un marché HIP-3
+
+**Ne jamais supposer qu'une route rend la même chose pour un marché standard et pour un
+marché HIP-3.** Ce gateway expose les routes ; c'est donc ici que l'écart se constate
+d'abord, et ici qu'il doit être couvert. Tout flux fonctionnel sur les perpétuels — une
+route, un champ, une unité, un arrondi, un cas d'absence — se vérifie sur **les deux**, et
+les deux réponses se **comparent**.
+
+Du constaté, pas de la prudence :
+
+- le `coin` d'un marché HIP-3 porte un préfixe de dex (`xyz:BRENTOIL`, `xyz:MU`), un marché
+  standard est nu (`BTC`, `ETH`). Tout ce qui indexe, parse, compare ou journalise par
+  `coin` traverse deux formes — y compris un `split(':')` écrit pour l'une des deux ;
+- les multiplicateurs de funding diffèrent par dex **et** par actif : 0,0 sur `flx` et
+  `vntl`, 0,000001 sur `cash`, 0,01 à 1,0 sur `hyna`, 0,5 sur `xyz`. Un `"0.0"` rendu par
+  `fundingHistory` a donc trois sens possibles — marché retiré, dex à multiplicateur nul,
+  ou funding réellement nul ;
+- HIP-3 utilise une formule de prime plus réactive, d'après la documentation officielle ;
+- les paramètres ne se passent pas tous de la même façon selon la route : `fundingHistory`
+  les attend **à plat**, `candleSnapshot` dans un `req` imbriqué. Une route nouvelle se lit,
+  elle ne se déduit pas de la précédente.
+
+Marchés d'épreuve : `BTC` et `ETH` d'un côté, `xyz:BRENTOIL` et `xyz:MU` de l'autre —
+présents le 2026-10-08 (132 marchés sur le dex `xyz`, 234 en standard). La liste bouge :
+vérifier qu'un marché cité existe encore avant de s'appuyer sur lui.
+
+⚠️ Un appel de vérification reste un appel : espacer, compter le poids, et **ne jamais
+relancer un 429** (voir la première règle).
+
 ## Travailler ici
 
 - **Avant d'affirmer ce que l'exchange rend**, lire
