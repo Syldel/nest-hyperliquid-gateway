@@ -1,9 +1,5 @@
-import type {
-  HLPerpMeta,
-  HLSpotMeta,
-  HLSpotTokenMeta,
-} from '@syldel/hl-shared-types';
 import { AssetRegistryService } from './asset-registry.service';
+import { buildRegistry, perpMeta } from './asset-registry.fixtures';
 
 /**
  * ============================================================================
@@ -21,80 +17,6 @@ import { AssetRegistryService } from './asset-registry.service';
  * actif.
  * ============================================================================
  */
-
-function token(name: string, index: number): HLSpotTokenMeta {
-  return {
-    name,
-    index,
-    szDecimals: 2,
-    weiDecimals: 8,
-    tokenId: `0x${index}`,
-    isCanonical: true,
-    evmContract: null,
-    fullName: null,
-  };
-}
-
-/**
- * ⚠️ Les tokens sont **volontairement** rangés dans un ordre qui ne suit pas
- * leurs index, et leurs index ne sont pas contigus. Le registre indexait
- * jusqu'ici le tableau par position (`tokens[market.tokens[0]]`), ce qui ne
- * marche que si les deux coïncident — ce que rien ne garantit.
- */
-const SPOT_META: HLSpotMeta = {
-  tokens: [
-    token('HYPE', 150),
-    token('USDT', 2),
-    token('USDC', 0),
-    token('PURR', 1),
-  ],
-  universe: [
-    // PURR/USDC : base PURR (1), quote USDC (0). Index 0 → nom « PURR/USDC ».
-    { name: 'PURR/USDC', tokens: [1, 0], index: 0, isCanonical: true },
-    // Une paire cotée en USDT, pour qu'un seul quote ne puisse pas tout faire passer.
-    { name: 'HYPE/USDT', tokens: [150, 2], index: 107, isCanonical: false },
-  ],
-};
-
-function perpMeta(names: string[], collateralToken?: number): HLPerpMeta {
-  return {
-    // `marginTableId` égale `maxLeverage` sur les quatre dex HIP-3 relevés
-    // (`xyz` 30/30, `para` 20/20, `mkts` 25/25, `io` 6/6) ; le dex principal,
-    // lui, ne suit pas cette règle (BTC : 56 pour 40x). Ici n'importe quelle
-    // valeur ferait l'affaire — mais une valeur plausible coûte le même prix.
-    universe: names.map((name) => ({
-      name,
-      szDecimals: 2,
-      maxLeverage: 20,
-      marginTableId: 20,
-    })),
-    marginTables: [],
-    ...(collateralToken !== undefined && { collateralToken }),
-  };
-}
-
-/** Le dex principal règle en USDC (token 0), `xyz` en USDT (token 2). */
-const PERP_BY_DEX: Record<string, HLPerpMeta> = {
-  '': perpMeta(['BTC', 'ETH'], 0),
-  xyz: perpMeta(['xyz:AAPL'], 2),
-  // Un dex dont le `meta` ne porte pas le champ : rien ne doit être enregistré.
-  mute: perpMeta(['mute:FOO']),
-};
-
-function buildRegistry(): AssetRegistryService {
-  const metaCache = {
-    ensureDexs: jest
-      .fn()
-      .mockResolvedValue([null, { name: 'xyz' }, { name: 'mute' }]),
-    ensureSpotMeta: jest.fn().mockResolvedValue(SPOT_META),
-    ensurePerpMeta: jest
-      .fn()
-      .mockImplementation((dex: string) => Promise.resolve(PERP_BY_DEX[dex])),
-    onMetaUpdated$: { subscribe: jest.fn() },
-  };
-
-  return new AssetRegistryService(metaCache as never);
-}
 
 describe('AssetRegistryService — collateral derivation', () => {
   let registry: AssetRegistryService;
