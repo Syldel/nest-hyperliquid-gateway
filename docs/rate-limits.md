@@ -19,7 +19,7 @@ relevés le 2026-09-21.
 | Requête | Poids |
 | --- | --- |
 | `l2Book`, `allMids`, `clearinghouseState`, `orderStatus`, `spotClearinghouseState`, `exchangeStatus` | 2 |
-| toute autre lecture `/info` (dont `meta`, `metaAndAssetCtxs`, `frontendOpenOrders`, `perpDexs`, `spotMeta`) | 20 |
+| toute autre lecture `/info` (dont `meta`, `metaAndAssetCtxs`, `frontendOpenOrders`, `perpDexs`, `spotMeta`, `userFees`) | 20 |
 | `candleSnapshot` | 20 + 1 par tranche de 60 bougies rendues |
 | `userFills`, `historicalOrders`, `fundingHistory`… | 20 + 1 par tranche de 20 éléments rendus |
 | `userRole` | 60 |

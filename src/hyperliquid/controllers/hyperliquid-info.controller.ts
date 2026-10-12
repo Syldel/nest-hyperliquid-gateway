@@ -17,7 +17,7 @@ import {
 } from '../dtos/hyperliquid-info.query.dto';
 import { UserAuthGuard } from '../../common/guards/user-auth.guard';
 import { AssetRegistryService } from '../services/asset-registry.service';
-import { HlActiveAssetData } from '@syldel/hl-shared-types';
+import { HlActiveAssetData, HlUserFees } from '@syldel/hl-shared-types';
 import { HyperliquidCollateralService } from '../services/hyperliquid-collateral.service';
 
 @Controller('hyperliquid/info')
@@ -212,6 +212,23 @@ export class HyperliquidInfoController {
   @UseGuards(UserAuthGuard)
   async getPortfolio() {
     return this.privateInfoService.getUserPortfolio();
+  }
+
+  /**
+   * Récupère le barème de frais de l'utilisateur authentifié.
+   *
+   * ⚠️ **Aucun code ne l'appelle encore, et c'est assumé.** La route a été
+   * écrite le 2026-10-12 pour qu'un écran puisse un jour afficher le vrai palier
+   * plutôt que celui publié ; elle ne sert **pas** au backtest, dont la route
+   * (`POST /analysis`, côté bot) est anonyme — il n'y aurait personne à qui
+   * attribuer un palier. Voir `nest-trading-bot/docs/known-gaps.md`, point 11.
+   *
+   * (type: 'userFees', poids 20)
+   */
+  @Get('user-fees')
+  @UseGuards(UserAuthGuard)
+  async getUserFees(@Query('testnet') testnet?: string): Promise<HlUserFees> {
+    return this.privateInfoService.getUserFees(this.castTestnetFlag(testnet));
   }
 
   /**

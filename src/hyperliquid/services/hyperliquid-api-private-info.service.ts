@@ -12,6 +12,7 @@ import {
   HLUserFillsByTimeRequest,
   HlActiveAssetData,
   AccountAbstractionMode,
+  HlUserFees,
 } from '@syldel/hl-shared-types';
 import { UserContextService } from '../../auth/user-context.service';
 import { HyperliquidApiBaseInfoService } from './hyperliquid-api-base-info.service';
@@ -209,6 +210,32 @@ export class HyperliquidApiPrivateInfoService extends HyperliquidApiBaseInfoServ
       type: 'portfolio',
       user: this.userContext.walletAddress,
     });
+  }
+
+  /**
+   * Récupère le barème de frais de l'utilisateur.
+   *
+   * `userCrossRate` et `userAddRate` sont **son** taux, déjà net de son palier
+   * de volume sur 14 jours et de sa remise de staking HYPE — mais pas de sa
+   * remise de parrainage (`activeReferralDiscount`, que la formule officielle
+   * applique à part), ni du barème propre à un marché HIP-3.
+   *
+   * ⚠️ Les deux ne portent **pas** les noms du pseudo-code de la page des frais,
+   * qui écrit `fees: { makerRate, takerRate }`. Le point de terminaison ne
+   * connaît ni l'un ni l'autre : `cross` prend la liquidité, `add` l'apporte.
+   *
+   * Le barème est réévalué à la fin de chaque jour UTC, donc la réponse n'a pas
+   * besoin d'être fraîche à la minute — un appelant qui la lit souvent devrait
+   * la garder.
+   */
+  async getUserFees(isTestnet: boolean = false): Promise<HlUserFees> {
+    return this.executeInfo<HlUserFees>(
+      {
+        type: 'userFees',
+        user: this.userContext.walletAddress,
+      },
+      isTestnet,
+    );
   }
 
   /**

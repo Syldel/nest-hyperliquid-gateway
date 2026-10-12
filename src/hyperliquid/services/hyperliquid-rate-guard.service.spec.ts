@@ -194,6 +194,18 @@ describe('le poids des requêtes', () => {
     expect(infoRequestWeight('meta')).toBe(20);
     expect(infoRequestWeight('frontendOpenOrders')).toBe(20);
     expect(infoRequestWeight('metaAndAssetCtxs')).toBe(20);
+    /**
+     * `userFees` tombe dans la branche par défaut. Le classer **léger** coûterait
+     * 18 de sous-comptage par appel, et on s'approcherait du plafond sans le
+     * voir — ce test l'attrape.
+     *
+     * ⚠️ Le classer **paginé**, en revanche, ne changerait rien, et aucun test
+     * ne peut l'attraper : le supplément par élément n'est fourni que lorsque la
+     * réponse est un tableau (`Array.isArray(data) ? data.length : undefined`
+     * dans `executeInfo`), et `userFees` répond un **objet**. Mutation prouvée
+     * équivalente le 2026-10-12, pas une lacune.
+     */
+    expect(infoRequestWeight('userFees')).toBe(20);
   });
 
   it('adds one per started block of 60 candles, rounding up', () => {
