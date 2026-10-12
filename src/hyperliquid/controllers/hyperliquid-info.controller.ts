@@ -217,11 +217,22 @@ export class HyperliquidInfoController {
   /**
    * Récupère le barème de frais de l'utilisateur authentifié.
    *
-   * ⚠️ **Aucun code ne l'appelle encore, et c'est assumé.** La route a été
-   * écrite le 2026-10-12 pour qu'un écran puisse un jour afficher le vrai palier
-   * plutôt que celui publié ; elle ne sert **pas** au backtest, dont la route
-   * (`POST /analysis`, côté bot) est anonyme — il n'y aurait personne à qui
-   * attribuer un palier. Voir `nest-trading-bot/docs/known-gaps.md`, point 11.
+   * ⚠️ **Aucun code ne l'appelle, et elle attend un consommateur côté serveur.**
+   * Écrite le 2026-10-12, conservée le lendemain sur décision explicite après
+   * que le mobile a cessé d'en être le client. Deux précisions, pour qu'on ne
+   * refasse pas le chemin à l'envers :
+   *
+   * - **le mobile ne passera pas par ici.** `userFees` est une information : il
+   *   prend l'adresse en paramètre et ne signe rien, donc il tombe du côté de
+   *   l'API publique, que l'app interroge déjà directement pour ses
+   *   remplissages. Le faire transiter par ce garde rendait l'écran vide dans le
+   *   mode normal de l'app, où l'adresse est mémorisée sans jeton valide ;
+   * - **le backtest non plus.** `POST /analysis`, côté bot, est une route
+   *   anonyme : il n'y aurait personne à qui attribuer un palier.
+   *
+   * Ce qu'elle attend, c'est un appelant **serveur** dans un contexte
+   * utilisateur — le bot, qui passe par le gateway pour tout ce qui touche un
+   * compte. Voir `nest-trading-bot/docs/known-gaps.md`, point 11.
    *
    * (type: 'userFees', poids 20)
    */
