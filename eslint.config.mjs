@@ -39,7 +39,9 @@ export default [
       '@typescript-eslint/no-floating-promises': 'warn',
       '@typescript-eslint/no-unsafe-argument': 'warn',
 
-      'prettier/prettier': ['error', { endOfLine: 'auto' }],
+      // `endOfLine` vient de `.prettierrc` (lf) : une surcharge `auto` ici
+      // laissait passer un CRLF que la config disait refuser.
+      'prettier/prettier': 'error',
     },
   },
 ];
