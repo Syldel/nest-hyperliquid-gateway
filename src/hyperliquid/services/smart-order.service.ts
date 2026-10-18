@@ -23,6 +23,7 @@ import {
   InstantOrderParams,
   NormalizedProtectiveOrder,
   ProtectiveOrderParams,
+  roundDecimal,
   SmartOrderResponse,
   WaitOrderStatusOptions,
 } from '@syldel/hl-shared-types';
@@ -37,17 +38,25 @@ import { HyperliquidGatewayException } from '../exceptions/hyperliquid-gateway.e
 import { HyperliquidCollateralService } from './hyperliquid-collateral.service';
 
 /**
- * Le prix limite `p` d'un ordre protecteur AU MARCHÉ, en facteur du déclencheur : 10 % au-delà,
- * sous lui pour une vente, au-dessus pour un achat (le pire prix accepté pour sortir).
+ * Le prix limite `p` d'un ordre protecteur AU MARCHÉ : la borne que l'exchange recalculera lui-même.
  *
- * Avant le 2026-10-18, `p` valait le déclencheur lui-même. `p` est obligatoire dans le format
- * d'ordre, et aucune source lue ne dit s'il borne l'exécution d'un déclencheur « au marché » :
- * s'il la borne, un stop vendeur à `p = triggerPx` ne s'exécute pas dans un gap — le cas que la
- * doc officielle cite (TP/SL, « Limit vs Market »). Un `p` à 10 % est sûr dans les deux
- * hypothèses : ignoré, il ne change rien ; appliqué, il laisse le stop sortir. 10 % est la
- * tolérance de glissement par défaut de l'interface officielle, et ce que le formulaire mobile
- * envoie déjà pour un déclencheur au marché. Un CHOIX, pas une mesure : voir
- * docs/protective-order-price.md.
+ * **Pour un déclencheur au marché, Hyperliquid ignore `p`** (mesuré le 2026-10-18 sur l'historique
+ * du compte : 26 stops et take-profits au marché déclenchés, BTC et SOL, achats et ventes). Quel
+ * que soit le `p` posé — le déclencheur lui-même, comme ce gateway le faisait avant, +8 %, ou
+ * ses 90 % —, la ligne `filled` de l'ordre déclenché porte une borne de **déclencheur × 0,9 pour
+ * une vente, × 1,1 pour un achat** : sa propre tolérance de glissement de 10 %, celle de sa doc.
+ *
+ * **L'arrondi, tel qu'il se lit sur ses ordres** : un achat est tronqué, une vente est tronquée
+ * puis relevée d'un tick — y compris quand le produit tombe juste (78130 × 0,9 = 70317, il écrit
+ * 70318 ; 79960 × 1,1 = 87956, il écrit 87956). Cela reproduit les 26 ordres de l'historique, les
+ * deux produits exacts compris. ⚠️ Déduit de ces ordres, pas documenté ; la raison du tick de plus
+ * pour une vente est inconnue, et les deux produits exacts sont des entiers BTC.
+ *
+ * Le champ reste obligatoire dans le format d'ordre. On y met donc ce que l'exchange recalculera,
+ * pour que l'ordre au repos se lise comme l'ordre qui sera exécuté — et non plus `triggerPx`, qui
+ * donnait à un stop au marché une limite qu'il n'a pas. Ce n'est **pas** une protection que
+ * nous ajoutons : sans effet sur l'exécution au marché, et l'avant-2026-10-18 n'en souffrait pas.
+ * Voir docs/protective-order-price.md.
  */
 const MARKET_TRIGGER_LIMIT_FACTOR = { sell: '0.9', buy: '1.1' } as const;
 
@@ -569,11 +578,13 @@ export class SmartOrderService {
    * une vente (`isBuy: false`). C'est ce que le bot envoie, et c'est de lui que dépend le sens
    * du prix limite.
    *
-   * Au marché (le défaut), le prix limite est écarté du déclencheur : voir
-   * `MARKET_TRIGGER_LIMIT_FACTOR`. Un déclencheur **limite** (`isMarket: false`) garde
-   * `p = triggerPx` : l'appelant ne donne qu'un prix, et en choisir un autre à sa place serait
-   * décider d'un ordre qu'il a voulu précis. ⚠️ C'est le cas que la doc officielle donne pour
-   * rester en attente dans un gap ; aucun appelant connu ne l'utilise.
+   * Au marché (le défaut), `p` est la borne que l'exchange recalcule et applique : voir
+   * `MARKET_TRIGGER_LIMIT_FACTOR` — il ignore celui qu'on lui envoie. Un déclencheur **limite**
+   * (`isMarket: false`) garde `p = triggerPx` : l'appelant ne donne qu'un prix, et en choisir un
+   * autre à sa place serait décider d'un ordre qu'il a voulu précis. ⚠️ Ici `p` est le prix de
+   * l'ordre posé au déclenchement, donc un vrai plancher — et c'est le cas que la doc officielle
+   * donne pour rester en attente dans un gap. Jamais observé au déclenchement ; aucun appelant
+   * connu ne l'utilise.
    */
   public toHLOrderDetails(params: ProtectiveOrderParams): HLOrderDetails {
     const isMarket = params.isMarket ?? true;
@@ -595,9 +606,10 @@ export class SmartOrderService {
   }
 
   /**
-   * Le déclencheur écarté de 10 %, écrit comme l'exchange l'exige. Un actif inconnu **échoue**
-   * : se rabattre sur des décimales par défaut ferait poser un prix que l'exchange refuse ou
-   * tronque, sur un ordre dont la seule fonction est de protéger.
+   * La borne de l'exchange pour un déclencheur au marché : le déclencheur écarté de 10 %, arrondi
+   * comme lui (voir `MARKET_TRIGGER_LIMIT_FACTOR`) à la grille de prix. Un actif inconnu
+   * **échoue** : se rabattre sur des décimales par défaut ferait poser un prix que l'exchange
+   * refuse ou tronque, sur un ordre dont la seule fonction est de protéger.
    */
   private marketTriggerLimitPx(params: ProtectiveOrderParams): string {
     const szDecimals = this.assetRegistry.getSzDecimals(params.assetName);
@@ -611,16 +623,36 @@ export class SmartOrderService {
     const factor = params.isBuy
       ? MARKET_TRIGGER_LIMIT_FACTOR.buy
       : MARKET_TRIGGER_LIMIT_FACTOR.sell;
-    // Arithmétique exacte : en flottant, 129,2 × 0,9 donne 116,27999999999999, que le formatage
-    // tronque à 116.27 au lieu de 116.28 (mesuré le 2026-10-18) — un tick de travers, sur un
-    // ordre dont le prix est tout l'objet.
-    const spread = this.decimalUtils.multiply(params.price, factor, 8, 'price');
+    // Arithmétique exacte : un flottant peut placer le dernier chiffre un tick de travers.
+    const bound = this.decimalUtils.multiply(params.price, factor, 8, 'price');
 
-    return this.valueFormatter.formatPrice(
-      spread,
+    const marketType = this.assetRegistry.isPerp(params.assetName)
+      ? 'perp'
+      : 'spot';
+    const decimals = this.valueFormatter.priceDecimals(
+      bound,
       szDecimals,
-      this.assetRegistry.isPerp(params.assetName) ? 'perp' : 'spot',
+      marketType,
     );
+
+    // Tronqué ; une vente est ensuite relevée d'un tick.
+    const truncated = roundDecimal(bound, decimals, 'truncate');
+    const rounded = params.isBuy
+      ? truncated
+      : this.addOneTick(truncated, decimals);
+
+    return this.valueFormatter.formatPrice(rounded, szDecimals, marketType);
+  }
+
+  /** Un tick de plus : une unité du dernier chiffre permis, `decimals` décimales. */
+  private addOneTick(value: string, decimals: number): string {
+    const [int, frac = ''] = value.split('.');
+    const units = BigInt(int + frac.padEnd(decimals, '0')) + 1n;
+    const digits = units.toString().padStart(decimals + 1, '0');
+    const whole = digits.slice(0, digits.length - decimals);
+    const fraction = decimals > 0 ? digits.slice(digits.length - decimals) : '';
+
+    return fraction ? `${whole}.${fraction}` : whole;
   }
 
   private sortProtectiveOrders<T extends { price: string }>(

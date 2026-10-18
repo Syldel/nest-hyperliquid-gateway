@@ -99,8 +99,11 @@ ne dit rien de ce que le compilateur refuse. Les deux se lancent, pas l'un ou l'
   bon comportement sur un vrai compte en portfolio margin ne l'est pas — ces deux modes
   n'ont jamais pu être exercés. Voir
   [docs/account-abstraction.md](docs/account-abstraction.md).
-- Les ordres protecteurs (TP/SL, bot compris) au marché partent, depuis le 2026-10-18, avec un
-  `limitPx` à 10 % du déclencheur (avant : `limitPx = triggerPx`). Si Hyperliquid applique `p`
-  comme borne, un SL ne s'exécute pas dans un gap : le 10 % rend la question sans danger, mais
-  ce que l'exchange fait de `p` reste **non mesuré**, comme ce qu'il rend dans `limitPx`. Voir
+- Pour un déclencheur **au marché**, Hyperliquid **ignore le `p`** qu'on lui envoie : il recrée
+  l'ordre au déclenchement avec sa propre borne de 10 % (mesuré le 2026-10-18 sur 26 ordres
+  déclenchés d'un compte réel). Les ordres protecteurs (TP/SL, bot compris) partent donc, depuis
+  cette date, avec cette borne dans `limitPx` (avant : `limitPx = triggerPx`) — sans effet sur
+  l'exécution, pour que l'ordre au repos se lise comme l'ordre exécuté. Un déclencheur **limite**
+  garde `p = triggerPx`, et là `p` compte : jamais observé au déclenchement. Non mesuré : un gap, et
+  les routes du gateway elles-mêmes avec ce `p`. Voir
   [docs/protective-order-price.md](docs/protective-order-price.md).

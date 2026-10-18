@@ -920,14 +920,14 @@ describe('SmartOrderService', () => {
           expect.objectContaining({
             oid: 102,
             order: expect.objectContaining({
-              limitPx: '7380',
+              limitPx: '7381',
               sz: '0.6',
             }) as unknown,
           }), // TP
           expect.objectContaining({
             oid: 101,
             order: expect.objectContaining({
-              limitPx: '8190',
+              limitPx: '8191',
               sz: '0.25',
             }) as unknown,
           }), // SL
@@ -945,7 +945,7 @@ describe('SmartOrderService', () => {
         order: {
           assetName: 'BTC',
           isBuy: false,
-          limitPx: '8280',
+          limitPx: '8281',
           orderType: {
             trigger: {
               isMarket: true,
@@ -969,10 +969,12 @@ describe('SmartOrderService', () => {
   });
 
   /**
-   * Le prix limite `p` d'un ordre protecteur. Un déclencheur au marché porte un `p` écarté de
-   * 10 % (voir `MARKET_TRIGGER_LIMIT_FACTOR` et docs/protective-order-price.md) : sous le
-   * déclencheur pour une vente, au-dessus pour un achat. Les valeurs sont écrites en clair, pas
-   * relues depuis la constante : un test qui la relirait dirait toujours la même chose qu'elle.
+   * Le prix limite `p` d'un ordre protecteur AU MARCHÉ : la borne que l'exchange recalcule lui-même
+   * (déclencheur × 0,9 pour une vente, × 1,1 pour un achat ; un achat tronqué, une vente tronquée
+   * puis relevée d'un tick) et dont il ignore le `p` qu'on lui envoie — mesuré le 2026-10-18, voir
+   * `MARKET_TRIGGER_LIMIT_FACTOR` et docs/protective-order-price.md. Les valeurs sont écrites en
+   * clair, pas relues depuis la constante : un test qui la relirait dirait toujours la même chose
+   * qu'elle.
    */
   describe('toHLOrderDetails — limit price of a protective order', () => {
     const protective = (
@@ -993,7 +995,7 @@ describe('SmartOrderService', () => {
     });
 
     it('puts a market stop that sells 10 % under its trigger', () => {
-      expect(protective({ isBuy: false }).limitPx).toBe('72900');
+      expect(protective({ isBuy: false }).limitPx).toBe('72901');
     });
 
     it('puts a market stop that buys 10 % over its trigger', () => {
@@ -1001,7 +1003,7 @@ describe('SmartOrderService', () => {
     });
 
     it('gives a market take profit the same spread as a stop', () => {
-      expect(protective({ kind: 'tp', isBuy: false }).limitPx).toBe('72900');
+      expect(protective({ kind: 'tp', isBuy: false }).limitPx).toBe('72901');
     });
 
     it('treats a missing isMarket as market, as the trigger itself does', () => {
@@ -1009,7 +1011,7 @@ describe('SmartOrderService', () => {
       expect(order.orderType).toEqual({
         trigger: { isMarket: true, triggerPx: '81000', tpsl: 'sl' },
       });
-      expect(order.limitPx).toBe('72900');
+      expect(order.limitPx).toBe('72901');
     });
 
     it('leaves the trigger itself untouched: only the limit moves', () => {
@@ -1025,15 +1027,50 @@ describe('SmartOrderService', () => {
       expect(order.orderType).toMatchObject({ trigger: { isMarket: false } });
     });
 
-    it('writes the price the way the exchange requires: 5 significant figures, truncated', () => {
-      // 81234 × 0,9 = 73110,6 → 5 chiffres significatifs : 73110, jamais arrondi vers le haut.
-      expect(protective({ price: '81234' }).limitPx).toBe('73110');
+    it('truncates a buy, and raises a sell by one tick after truncating it, as the exchange does', () => {
+      // 81234 × 0,9 = 73110,6 → tronqué 73110, plus un tick : 73111.
+      expect(protective({ price: '81234' }).limitPx).toBe('73111');
+      // 81238 × 1,1 = 89361,8 → tronqué : 89361.
+      expect(protective({ price: '81238', isBuy: true }).limitPx).toBe('89361');
+      // 81838 × 0,9 = 73654,2 : l'exchange écrit 73655, pas 73654.
+      expect(protective({ price: '81838' }).limitPx).toBe('73655');
     });
 
-    it('does the arithmetic exactly: in floating point, 129.2 × 0.9 truncates one tick short', () => {
-      // 129,2 × 0,9 vaut 116,27999999999999 en flottant, tronqué à 116.27 au lieu de 116.28.
+    it('raises a sell by one tick even when the product is exact, and leaves an exact buy alone', () => {
+      // Les deux produits exacts de l'historique du compte (2026-10-18), recopiés.
+      expect(protective({ price: '78130' }).limitPx).toBe('70318');
+      expect(protective({ price: '79960', isBuy: true }).limitPx).toBe('87956');
+    });
+
+    /**
+     * Des ordres déclenchés RÉELS, relevés dans `historicalOrders` du compte le 2026-10-18 : le
+     * `limitPx` de la ligne `filled`, écrit par l'exchange, recopié. Si l'un tombe, notre `p` s'est
+     * écarté de la borne qu'il applique.
+     */
+    it.each([
+      ['BTC sell', 'BTC', 5, '81838', false, '73655'],
+      ['BTC sell', 'BTC', 5, '81937', false, '73744'],
+      ['BTC sell', 'BTC', 5, '78009', false, '70209'],
+      ['BTC buy', 'BTC', 5, '77724', true, '85496'],
+      ['BTC buy', 'BTC', 5, '77761', true, '85537'],
+      ['BTC buy', 'BTC', 5, '78373', true, '86210'],
+      ['SOL sell', 'SOL', 2, '85.014', false, '76.513'],
+      ['SOL sell', 'SOL', 2, '85.347', false, '76.813'],
+      ['SOL buy', 'SOL', 2, '82.717', true, '90.988'],
+      ['SOL buy', 'SOL', 2, '84.329', true, '92.761'],
+    ])(
+      'writes what the exchange wrote on a triggered market order: %s %s',
+      (_label, assetName, szDecimals, price, isBuy, expected) => {
+        getSzDecimals.mockReturnValue(szDecimals);
+        expect(protective({ assetName, price, isBuy }).limitPx).toBe(expected);
+      },
+    );
+
+    it('does the arithmetic exactly: no floating point noise decides the last digit', () => {
+      // 129,2 × 0,9 = 116,28 : tronqué 116.28, plus un tick, 116.29. Un produit flottant
+      // 116,27999999999999 serait tronqué à 116.27, plus un tick, 116.28 : un tick de travers.
       getSzDecimals.mockReturnValue(2);
-      expect(protective({ price: '129.2' }).limitPx).toBe('116.28');
+      expect(protective({ price: '129.2' }).limitPx).toBe('116.29');
       expect(protective({ price: '129.7', isBuy: true }).limitPx).toBe(
         '142.67',
       );
@@ -1043,9 +1080,10 @@ describe('SmartOrderService', () => {
       getSzDecimals.mockReturnValue(2);
       isPerp.mockReturnValue(false);
       // Spot : jusqu'à 8 − szDecimals = 6 décimales, 5 chiffres significatifs au plus.
+      // 0,123456 × 0,9 = 0,1111104 → 0,11111 ; vers le haut (vente) : 0,11112.
       expect(
         protective({ assetName: 'PURR/USDC', price: '0.123456' }).limitPx,
-      ).toBe('0.11111');
+      ).toBe('0.11112');
     });
 
     it('refuses an unknown asset rather than guessing decimals', () => {

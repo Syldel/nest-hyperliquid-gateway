@@ -1,11 +1,25 @@
 # Ordres protecteurs : le prix limite `p` d'un déclencheur « au marché »
 
+## En deux phrases
+
+**Pour un déclencheur au marché, Hyperliquid ignore le `p` qu'on lui envoie** : à son
+déclenchement, il recrée l'ordre avec sa propre borne de 10 %, quel que soit `p`. Mesuré le
+2026-10-18 sur l'historique d'un compte réel (26 ordres déclenchés), et non déduit d'une
+documentation qui, elle, ne le dit pas. Le gateway envoie cette borne dans `p` pour que l'ordre
+au repos se lise comme l'ordre qui sera exécuté ; ce n'est **pas** une protection qu'il ajoute.
+
+⚠️ Ce que cela ne couvre pas : un déclencheur **limite** (`isMarket: false`), où `p` est un vrai
+plancher et n'a jamais été observé au déclenchement ; le comportement **dans un gap**, qui n'a pas
+eu lieu pendant les mesures ; et le chemin des routes du gateway elles-mêmes, jamais appelées en
+réel avec ce `p`.
+
 ## Pourquoi ce document existe
 
-⚠️ **Défaut possible, non mesuré.** Un stop loss est la seule chose qui sépare une position
-d'une perte non bornée ; un stop qui se déclenche sans s'exécuter est pire qu'une erreur
-visible, car rien ne le signale. Cette page garde la question ouverte là où quelqu'un la
-lira avant de confier de l'argent réel à un SL.
+Un stop loss est la seule chose qui sépare une position d'une perte non bornée ; un stop qui se
+déclenche sans s'exécuter est pire qu'une erreur visible, car rien ne le signale. Jusqu'au
+2026-10-18 le gateway envoyait `p = triggerPx`, et la doc officielle laissait craindre qu'un SL
+vendeur ainsi posé reste en attente dans un gap. Cette page garde la trace de ce qui a été
+craint, de ce qui a été mesuré, et de ce qui ne l'a pas été.
 
 ## Ce que fait le gateway (depuis le 2026-10-18)
 
@@ -13,91 +27,91 @@ lira avant de confier de l'argent réel à un SL.
 construit tout ordre protecteur — Take Profit ou Stop Loss, y compris ceux du bot — avec
 
 ```
-limitPx = triggerPx × 0,9   // vente (ferme un long), × 1,1 pour un achat, arrondi comme l'exchange l'exige
+limitPx = la borne de l'exchange   // déclencheur × 0,9 pour une vente (ferme un long),
+                                   // × 1,1 pour un achat ; voir « L'arrondi » ci-dessous
 trigger: { isMarket: true (par défaut), triggerPx, tpsl }
 ```
 
-`limitPx` part tel quel dans le champ `p` de l'ordre (`hyperliquid-api-trade.service.ts`).
-Le champ est **obligatoire** : le DTO le refuse absent (`@IsString() limitPx`).
+`limitPx` part dans le champ `p` de l'ordre (`hyperliquid-api-trade.service.ts`). Le champ est
+**obligatoire** : le DTO le refuse absent. Un déclencheur **limite** (`isMarket: false`) garde
+`p = triggerPx` : l'appelant ne donne qu'un prix, et en choisir un autre à sa place serait décider
+d'un ordre qu'il a voulu précis. ⚠️ Pour celui-là, `p` est le prix de l'ordre posé au
+déclenchement ; c'est le cas que la doc officielle donne pour rester en attente dans un gap. Aucun
+appelant connu ne l'utilise.
 
-**Avant le 2026-10-18**, `limitPx` valait `triggerPx`. Le changement ne tranche pas la
-question ci-dessous : il rend la réponse sans importance (voir « Pourquoi 10 % »). Un
-déclencheur **limite** (`isMarket: false`) garde `p = triggerPx` : l'appelant ne donne qu'un
-prix, et aucun appelant connu ne l'utilise.
+**Avant le 2026-10-18**, `limitPx` valait `triggerPx`. Ce changement n'a **aucun effet sur
+l'exécution** d'un déclencheur au marché, puisque l'exchange ignore `p` : il ne corrige donc pas un
+défaut. Il aligne ce qu'on pose sur ce qui sera exécuté. Les protections déjà posées gardent
+`p = triggerPx` tant que leur déclencheur ne bouge pas, sans conséquence.
 
-**Pourquoi 10 %.** Un `p` écarté est sûr dans les deux hypothèses : si `p` est ignoré pour un
-déclencheur au marché, il ne change rien ; s'il borne l'exécution, il laisse le stop sortir
-dans un gap. 10 % est la tolérance de glissement par défaut de l'interface officielle, et ce
-que le formulaire d'ordre du mobile envoie pour un déclencheur au marché. La modale « Add
-protective order » du mobile gardait, elle, un écart fixe de 0,1 % jusqu'au 2026-10-18 ; elle
-suit désormais les mêmes écarts. **C'est un choix, pas une mesure**, comme les autres écarts
-du formulaire.
+## Ce qui a été mesuré (2026-10-18)
 
-**Mesuré le 2026-10-18, sur un ordre posé par le formulaire du mobile** (pas par le gateway : le
-formulaire envoie son propre limite, d'un type identique — Stop Market, `p` à 10 %) : l'ordre est
-accepté, `frontendOpenOrders` rend le `p` envoyé au repos (81937 → `73743.0`, y compris après une
-modification), le stop s'est exécuté au marché à 1 $ du déclencheur. ⚠️ Après le déclenchement,
-l'historique garde une ligne dont le `limitPx` vaut `73744.0` : une unité de plus, inexpliquée.
-**Ce que l'ordre ne dit pas** : le comportement dans un gap, qui n'a pas eu lieu, et le chemin
-du gateway lui-même (`/orders/protective`, `/orders/batch-protective`), jamais appelé en réel
-avec ce `p`.
+### La source : l'historique du compte
 
-L'issue `hyperliquid-python-sdk#97` rapporte un `limitPx` renvoyé à 90 % de celui de l'interface
-pour un TP au marché exécuté : lue avec la mesure ci-dessus, elle s'accorde avec « le 90 % est le
-`p` lui-même », ce qui n'est pas démontré. Par prudence, le bot lit le **déclencheur** d'un ordre
-déclenché, jamais sa limite, pour juger un ordre existant. Pour la même raison, la comparaison
-« cet ordre a-t-il changé ? » (`filterUnchangedOrders`) ne porte **pas** sur `p` : un écart entre
-ce qu'on envoie et ce qu'on lit (comme les `73744.0` ci-dessus) relancerait une modification à
-chaque passage. Les protections déjà posées avant le changement gardent donc `p = triggerPx` tant
-que leur déclencheur ne bouge pas.
+`historicalOrders` du compte de test rend, pour un ordre déclenché, **deux lignes** de même `oid` :
+`triggered` (l'ordre tel que posé, avec son `p`) et `filled` (l'ordre exécuté, `triggerCondition:
+"Triggered"`, `tif: "Gtc"`). Sur les **26 ordres au marché déclenchés** du compte (stops et
+take-profits, BTC et SOL, achats et ventes, d'avril à octobre 2026) :
 
-## Pourquoi c'est une question
+- le `p` posé n'a aucun rapport avec celui de la ligne `filled` : `p = triggerPx` pour 23 d'entre
+  eux, `+8 %` pour un, `p` à 10 % pour les deux d'aujourd'hui ;
+- la ligne `filled` porte **toujours** déclencheur × 0,9 (vente) ou × 1,1 (achat).
+
+C'est ce qui établit que `p` est ignoré. L'ordre au repos affichait `p` tel que posé : seul
+l'historique montre ce que l'exchange a fait.
+
+### L'arrondi, tel qu'il se lit sur ces ordres
+
+Un achat est **tronqué** ; une vente est **tronquée puis relevée d'un tick**, y compris quand le
+produit tombe juste : 78130 × 0,9 = 70317 exactement, l'exchange écrit **70318** ; 79960 × 1,1 =
+87956 exactement, il écrit **87956**. Cette règle reproduit les 26 ordres, les deux produits exacts
+compris. ⚠️ **Déduite** de ces ordres, pas documentée : la raison du tick de plus pour une vente
+est inconnue, et les deux produits exacts sont des entiers BTC. Sans conséquence tant que `p` est
+ignoré. (Une première lecture attribuait l'écart du cas 78130 à de l'arithmétique flottante :
+fausse, aucun calcul flottant ne donne 70317,00000000001 ici.)
+
+### Un ordre réel, posé par le formulaire du mobile (pas par le gateway)
+
+Stop Market BTC de 0,00014 puis 0,00015, déclencheur au marché, `p` à 10 % : accepté ; `p` rendu
+tel que posé au repos (81937 → `73743.0`, y compris après une modification, qui est une annulation
+suivie d'un nouvel `oid`) ; exécuté **au marché** (taker) à 1 $, puis 28 $ du déclencheur. Posé
+sans position ouverte, il est accepté (reduce-only), puis actif quand l'entrée est exécutée. Un
+Take Profit **limite** posé avec `p` à 1,5 % est accepté et rend son `p` (80730) ; il n'a pas été
+déclenché. À la fermeture de la position par un autre ordre, l'exchange retire le reduce-only
+restant, avec le statut `reduceOnlyCanceled`.
+
+### Ce qui n'est pas mesuré
+
+- **Un gap** : l'exécution s'est faite à 1 $ puis 28 $ du déclencheur. Cela montre qu'un stop au
+  marché s'exécute normalement, pas ce qui se passe quand le prix saute. La borne de 10 % de
+  l'exchange est celle de sa doc, mais n'a pas été mise à l'épreuve.
+- **Un déclencheur limite**, au déclenchement.
+- **Les routes du gateway** (`/orders/protective`, `/orders/batch-protective`) avec ce `p`.
+
+## Ce que la doc officielle dit, et ne dit pas
 
 Sources, relevées le 2026-10-16 :
 [TP/SL](https://hyperliquid.gitbook.io/hyperliquid-docs/trading/take-profit-and-stop-loss-orders-tp-sl#limit-vs-market-tp-sl-orders)
 et [FAQ « My TP/SL did not execute correctly »](https://hyperliquid.gitbook.io/hyperliquid-docs/support/faq/trade-outcome-looks-incorrect/my-tp-sl-did-not-execute-correctly).
 
-- Les TP/SL **au marché** ont une tolérance de glissement de **10 % par défaut**. La doc
-  ne dit pas comment cette tolérance est transmise : très probablement par `p`, calculé par
-  l'interface officielle à 10 % du déclencheur. **Ce n'est pas écrit.**
-- La doc donne un exemple de ce qui arrive quand le limite égale le déclencheur : un SL long
-  avec déclencheur et limite à 10 $ peut **rester en attente** si le prix passe de 11 à 9 ;
-  un limite à 8 $ s'exécute entre 9 et 8.
-- Si `p` borne un déclencheur « au marché », un SL vendeur envoyé avec `p = triggerPx` est
-  exactement ce cas : il ne s'exécute pas dans un gap sous son déclencheur.
-
-La page de l'endpoint `exchange` dit seulement « p is price » ; elle ne dit pas si `p` est
-appliqué ou ignoré quand `isMarket` vaut `true`.
-
-## Ce qui reste à établir, en réel (petite taille ou testnet)
-
-1. Un SL vendeur au marché avec `p = triggerPx` : se remplit-il quand le prix **traverse**
-   le déclencheur sans s'y arrêter ? (Mesurable sur un actif peu liquide ou un
-   déclencheur très proche du marché.)
-2. Le même ordre avec `p` à 10 % du déclencheur : même observation.
-3. Si les deux se comportent pareil, `p` est ignoré pour un déclencheur au marché et
-   `p = triggerPx` est inoffensif. Sinon, il faut envoyer un `p` à la tolérance voulue, avec le
-   sens correct (plus bas pour une vente, plus haut pour un achat), et décider qui choisit
-   l'écart : l'appelant (bot, mobile) ou le gateway.
-
-Tant que ce n'est pas mesuré, **ne pas considérer un SL protecteur comme garanti
-d'exécution**. Le même constat est tenu côté application, dans
-`hyperliquid-mobile/docs/roadmap.md`, « À éprouver en réel ».
+- Les TP/SL **au marché** ont une tolérance de glissement de **10 % par défaut**. La doc ne dit
+  pas comment cette tolérance est transmise : l'historique du compte le dit, elle est recalculée
+  par l'exchange.
+- Elle donne un exemple de ce qui arrive quand le limite égale le déclencheur : un SL long avec
+  déclencheur et limite à 10 $ peut **rester en attente** si le prix passe de 11 à 9. Cela vaut
+  pour un déclencheur **limite**, où `p` compte ; les ordres au marché de ce compte, posés avec
+  `p = triggerPx`, ont tous été exécutés.
+- La page de l'endpoint `exchange` dit seulement « p is price ».
 
 ## Ce que les SDK disent (lu le 2026-10-18)
 
-Lus par un outil qui en rend un résumé, pas ligne à ligne : à reconfirmer sur le dépôt avant
-d'en faire une règle. Le détail et la valeur de chaque source sont dans
-`hyperliquid-mobile/docs/roadmap.md`, « À éprouver en réel », points 1 et 3.
+Lus par un outil qui en rend un résumé, pas ligne à ligne. Le détail est dans
+`hyperliquid-mobile/docs/roadmap.md`, « À éprouver en réel », points 1 et 3. **Ces lectures ne
+tranchaient rien** ; c'est l'historique du compte qui a tranché.
 
-- **SDK Python officiel** : l'exemple `basic_tpsl.py` envoie `p = triggerPx` pour le TP, mais un
-  `p` écarté du déclencheur pour le SL. `signing.py` écrit `p` pareil quelle que soit la valeur
-  de `isMarket` : l'effet de `p` est celui de l'exchange, jamais décidé par le SDK.
+- **SDK Python officiel** : `basic_tpsl.py` envoie `p = triggerPx` pour le TP et un `p` écarté pour
+  le SL ; `signing.py` écrit `p` pareil quelle que soit la valeur de `isMarket`.
 - **SDK Rust communautaire (hypersdk)** : définit l'ordre déclencheur, n'en place aucun dans ses
   exemples, ne dit rien de `p`.
 - **Issue `hyperliquid-python-sdk#97`** : un TP au marché exécuté a un `limitPx` à 90 % de celui
-  de l'interface. Un indice (un cas, un tiers), pas une preuve.
-
-**Ce que cela établit : rien sur l'effet de `p`.** Ce que cela laisse sûr : un `p` écarté du
-déclencheur est la pratique de l'exemple officiel pour un SL, donc `p = triggerPx` n'est pas le
-seul usage prévu.
+  de l'interface. Lue avec l'historique du compte, elle s'explique : c'est la borne de l'exchange.
