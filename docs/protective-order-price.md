@@ -80,6 +80,23 @@ Take Profit **limite** posé avec `p` à 1,5 % est accepté et rend son `p` (807
 déclenché. À la fermeture de la position par un autre ordre, l'exchange retire le reduce-only
 restant, avec le statut `reduceOnlyCanceled`.
 
+### Un déclencheur LIMITE : `p` est appliqué, et le trop serré reste au carnet
+
+Mesuré le 2026-10-18 sur quatre ordres déclenchés (`xyz:BRENTOIL`, `io:ANTH`, ETH ; posés par le
+formulaire du mobile, pas par le gateway) : la ligne `filled` de l'historique garde le `p` posé,
+`tif: "Gtc"` — l'ordre posé au déclenchement est un ordre limite à ce prix. Contrairement au
+déclencheur au marché, **`p` compte**.
+
+Un Stop Limit ETH dont le limite était **égal** au déclencheur (2377.0) s'est déclenché, puis son
+ordre limite de vente est resté au carnet **826 secondes** avant d'être exécuté en maker, quand le
+prix est remonté : la position est restée ouverte, sans protection, pendant 13 min 46 s. Un limite à
+5 % sous le déclencheur, lui, s'est exécuté tout de suite au meilleur acheteur (deux cas).
+
+**Ce que cela dit du gateway** : `isMarket: false` y garde `p = triggerPx`, c'est-à-dire **le cas
+mesuré qui reste au carnet**. Aucun appelant connu ne l'utilise (le bot et le mobile passent par
+le marché), mais un jour quelqu'un le fera sans savoir. À décider : refuser `isMarket: false`, ou
+exiger un limite explicite. Pas fait.
+
 ### Ce qui n'est pas mesuré
 
 - **Un gap** : l'exécution s'est faite à 1 $ puis 28 $ du déclencheur. Cela montre qu'un stop au
