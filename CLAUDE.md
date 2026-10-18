@@ -99,3 +99,7 @@ ne dit rien de ce que le compilateur refuse. Les deux se lancent, pas l'un ou l'
   bon comportement sur un vrai compte en portfolio margin ne l'est pas — ces deux modes
   n'ont jamais pu être exercés. Voir
   [docs/account-abstraction.md](docs/account-abstraction.md).
+- Les ordres protecteurs (TP/SL, bot compris) partent avec `limitPx = triggerPx`, même en
+  `isMarket`. Si Hyperliquid applique `p` comme borne, un SL ne s'exécute pas dans un gap :
+  **non mesuré**, à éprouver en réel. Voir
+  [docs/protective-order-price.md](docs/protective-order-price.md).
