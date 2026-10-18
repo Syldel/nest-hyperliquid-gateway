@@ -89,13 +89,22 @@ déclencheur au marché, **`p` compte**.
 
 Un Stop Limit ETH dont le limite était **égal** au déclencheur (2377.0) s'est déclenché, puis son
 ordre limite de vente est resté au carnet **826 secondes** avant d'être exécuté en maker, quand le
-prix est remonté : la position est restée ouverte, sans protection, pendant 13 min 46 s. Un limite à
+prix est remonté : la position est restée ouverte, sans protection, pendant 13 min 46 s. Un second
+cas le même jour (limite 2365.5) : **163,5 secondes**. Pendant l'attente l'ordre est lu dans
+`frontendOpenOrders` avec `isTrigger: false`, `triggerPx: "0.0"`, `triggerCondition: "Triggered"`
+et le même `orderType` (`Stop Limit`) : la route `batch-protective`, qui ne retient que
+`reduceOnly && isTrigger`, ne le voit pas. Un limite à
 5 % sous le déclencheur, lui, s'est exécuté tout de suite au meilleur acheteur (deux cas).
 
 **Ce que cela dit du gateway** : `isMarket: false` y garde `p = triggerPx`, c'est-à-dire **le cas
-mesuré qui reste au carnet**. Aucun appelant connu ne l'utilise (le bot et le mobile passent par
-le marché), mais un jour quelqu'un le fera sans savoir. À décider : refuser `isMarket: false`, ou
-exiger un limite explicite. Pas fait.
+mesuré qui reste au carnet**. Décidé le 2026-10-18 : le gateway est une **passerelle**, il ne refuse
+pas ce que l'exchange accepte (la route générique `hyperliquid/order` laisse déjà passer un
+déclencheur limite avec un limite explicite, et c'est par elle que le mobile en a posé). Le cas est
+donc **signalé**, par un avertissement de journal à chaque construction
+(`SmartOrderService.toHLOrderDetails`), et l'ordre part tel quel. C'est à l'appelant d'être
+prévenu **avant** — le mobile affiche un avertissement sous 1 %, le bot ne pose que des
+déclencheurs au marché. Aucun appelant connu des routes `/orders/protective` et
+`/orders/batch-protective` n'utilise `isMarket: false`.
 
 ### Ce qui n'est pas mesuré
 

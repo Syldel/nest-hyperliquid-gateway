@@ -1027,6 +1027,49 @@ describe('SmartOrderService', () => {
       expect(order.orderType).toMatchObject({ trigger: { isMarket: false } });
     });
 
+    // Le gateway est une passerelle : il ne refuse pas ce que l'exchange accepte. Mais un limite
+    // égal au déclencheur est le cas MESURÉ qui reste au carnet (Stop Limit ETH, 826 secondes,
+    // 2026-10-18) : il se dit, en avertissement de journal, et l'ordre part tel quel.
+    describe('a limit trigger is signalled, not refused', () => {
+      let warn: jest.SpyInstance;
+
+      beforeEach(() => {
+        warn = jest
+          .spyOn(
+            (service as unknown as { logger: { warn: () => void } }).logger,
+            'warn',
+          )
+          .mockImplementation(() => undefined);
+      });
+
+      it('warns, naming the asset, the kind and the limit that equals the trigger', () => {
+        protective({ isMarket: false, kind: 'sl', price: '81000' });
+
+        expect(warn).toHaveBeenCalledTimes(1);
+        const [firstCall] = warn.mock.calls as unknown[][];
+        const message = String(firstCall[0]);
+        expect(message).toContain('[BTC]');
+        expect(message).toContain('SL');
+        expect(message).toContain('isMarket: false');
+        expect(message).toContain('81000');
+        expect(message).toContain('docs/protective-order-price.md');
+      });
+
+      it('still sends the order as asked: nothing is refused or changed', () => {
+        const order = protective({ isMarket: false, price: '81000' });
+
+        expect(order.limitPx).toBe('81000');
+        expect(order.reduceOnly).toBe(true);
+      });
+
+      it('says nothing for a market trigger, the default and the bot case', () => {
+        protective({ isMarket: true });
+        protective({ isMarket: undefined });
+
+        expect(warn).not.toHaveBeenCalled();
+      });
+    });
+
     it('truncates a buy, and raises a sell by one tick after truncating it, as the exchange does', () => {
       // 81234 × 0,9 = 73110,6 → tronqué 73110, plus un tick : 73111.
       expect(protective({ price: '81234' }).limitPx).toBe('73111');

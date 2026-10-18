@@ -581,13 +581,24 @@ export class SmartOrderService {
    * Au marché (le défaut), `p` est la borne que l'exchange recalcule et applique : voir
    * `MARKET_TRIGGER_LIMIT_FACTOR` — il ignore celui qu'on lui envoie. Un déclencheur **limite**
    * (`isMarket: false`) garde `p = triggerPx` : l'appelant ne donne qu'un prix, et en choisir un
-   * autre à sa place serait décider d'un ordre qu'il a voulu précis. ⚠️ Ici `p` est le prix de
-   * l'ordre posé au déclenchement, donc un vrai plancher — et c'est le cas que la doc officielle
-   * donne pour rester en attente dans un gap. Jamais observé au déclenchement ; aucun appelant
-   * connu ne l'utilise.
+   * autre à sa place serait décider d'un ordre qu'il a voulu précis — le gateway est une
+   * passerelle, il ne refuse pas ce que l'exchange accepte. ⚠️ Ici `p` est le prix de l'ordre posé
+   * au déclenchement, donc un vrai plancher, et un limite égal au déclencheur est **le cas mesuré
+   * qui reste au carnet** : un Stop Limit ETH est resté 826 secondes sans s'exécuter, la
+   * position ouverte et sans protection (2026-10-18). Ce cas est donc **signalé**, en
+   * avertissement de journal à chaque construction ; aucun appelant connu ne l'utilise.
    */
   public toHLOrderDetails(params: ProtectiveOrderParams): HLOrderDetails {
     const isMarket = params.isMarket ?? true;
+
+    if (!isMarket) {
+      this.logger.warn(
+        `[${params.assetName}] ${params.kind.toUpperCase()} as a LIMIT trigger (isMarket: false): ` +
+          `p = triggerPx = ${params.price}, a limit equal to the trigger. Measured on 2026-10-18: ` +
+          `such a stop can trigger and then rest on the book unfilled (826 s on an ETH Stop Limit), ` +
+          `the position open and unprotected. See docs/protective-order-price.md.`,
+      );
+    }
 
     return {
       assetName: params.assetName,
