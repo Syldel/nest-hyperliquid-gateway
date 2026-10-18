@@ -28,8 +28,10 @@ prix, et aucun appelant connu ne l'utilise.
 **Pourquoi 10 %.** Un `p` écarté est sûr dans les deux hypothèses : si `p` est ignoré pour un
 déclencheur au marché, il ne change rien ; s'il borne l'exécution, il laisse le stop sortir
 dans un gap. 10 % est la tolérance de glissement par défaut de l'interface officielle, et ce
-que le formulaire mobile envoie déjà pour un déclencheur au marché. **C'est un choix, pas
-une mesure**, comme les autres écarts du formulaire.
+que le formulaire d'ordre du mobile envoie pour un déclencheur au marché. La modale « Add
+protective order » du mobile gardait, elle, un écart fixe de 0,1 % jusqu'au 2026-10-18 ; elle
+suit désormais les mêmes écarts. **C'est un choix, pas une mesure**, comme les autres écarts
+du formulaire.
 
 ⚠️ **Non mesuré** : ce que `frontendOpenOrders` rend dans `limitPx` pour un ordre posé ainsi.
 L'issue `hyperliquid-python-sdk#97` rapporte un `limitPx` renvoyé à 90 % de celui de
