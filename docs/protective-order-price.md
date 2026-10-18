@@ -33,14 +33,23 @@ protective order » du mobile gardait, elle, un écart fixe de 0,1 % jusqu'au 20
 suit désormais les mêmes écarts. **C'est un choix, pas une mesure**, comme les autres écarts
 du formulaire.
 
-⚠️ **Non mesuré** : ce que `frontendOpenOrders` rend dans `limitPx` pour un ordre posé ainsi.
-L'issue `hyperliquid-python-sdk#97` rapporte un `limitPx` renvoyé à 90 % de celui de
-l'interface pour un TP au marché exécuté. Le bot lit donc le **déclencheur** d'un ordre
-déclenché, jamais sa limite, pour juger un ordre existant. Pour cette raison, la comparaison
-« cet ordre a-t-il changé ? » (`filterUnchangedOrders`) ne porte **pas** sur `p` : un écart
-entre ce qu'on envoie et ce qu'on lit relancerait une modification à chaque passage. Les
-protections déjà posées avant le changement gardent donc `p = triggerPx` tant que leur
-déclencheur ne bouge pas.
+**Mesuré le 2026-10-18, sur un ordre posé par le formulaire du mobile** (pas par le gateway : le
+formulaire envoie son propre limite, d'un type identique — Stop Market, `p` à 10 %) : l'ordre est
+accepté, `frontendOpenOrders` rend le `p` envoyé au repos (81937 → `73743.0`, y compris après une
+modification), le stop s'est exécuté au marché à 1 $ du déclencheur. ⚠️ Après le déclenchement,
+l'historique garde une ligne dont le `limitPx` vaut `73744.0` : une unité de plus, inexpliquée.
+**Ce que l'ordre ne dit pas** : le comportement dans un gap, qui n'a pas eu lieu, et le chemin
+du gateway lui-même (`/orders/protective`, `/orders/batch-protective`), jamais appelé en réel
+avec ce `p`.
+
+L'issue `hyperliquid-python-sdk#97` rapporte un `limitPx` renvoyé à 90 % de celui de l'interface
+pour un TP au marché exécuté : lue avec la mesure ci-dessus, elle s'accorde avec « le 90 % est le
+`p` lui-même », ce qui n'est pas démontré. Par prudence, le bot lit le **déclencheur** d'un ordre
+déclenché, jamais sa limite, pour juger un ordre existant. Pour la même raison, la comparaison
+« cet ordre a-t-il changé ? » (`filterUnchangedOrders`) ne porte **pas** sur `p` : un écart entre
+ce qu'on envoie et ce qu'on lit (comme les `73744.0` ci-dessus) relancerait une modification à
+chaque passage. Les protections déjà posées avant le changement gardent donc `p = triggerPx` tant
+que leur déclencheur ne bouge pas.
 
 ## Pourquoi c'est une question
 
