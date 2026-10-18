@@ -36,6 +36,21 @@ import { ValueFormatterService } from './value-formatter.service';
 import { HyperliquidGatewayException } from '../exceptions/hyperliquid-gateway.exception';
 import { HyperliquidCollateralService } from './hyperliquid-collateral.service';
 
+/**
+ * Le prix limite `p` d'un ordre protecteur AU MARCHÉ, en facteur du déclencheur : 10 % au-delà,
+ * sous lui pour une vente, au-dessus pour un achat (le pire prix accepté pour sortir).
+ *
+ * Avant le 2026-10-18, `p` valait le déclencheur lui-même. `p` est obligatoire dans le format
+ * d'ordre, et aucune source lue ne dit s'il borne l'exécution d'un déclencheur « au marché » :
+ * s'il la borne, un stop vendeur à `p = triggerPx` ne s'exécute pas dans un gap — le cas que la
+ * doc officielle cite (TP/SL, « Limit vs Market »). Un `p` à 10 % est sûr dans les deux
+ * hypothèses : ignoré, il ne change rien ; appliqué, il laisse le stop sortir. 10 % est la
+ * tolérance de glissement par défaut de l'interface officielle, et ce que le formulaire mobile
+ * envoie déjà pour un déclencheur au marché. Un CHOIX, pas une mesure : voir
+ * docs/protective-order-price.md.
+ */
+const MARKET_TRIGGER_LIMIT_FACTOR = { sell: '0.9', buy: '1.1' } as const;
+
 @Injectable()
 export class SmartOrderService {
   private readonly logger = new Logger(SmartOrderService.name);
@@ -549,22 +564,63 @@ export class SmartOrderService {
    *
    * Cette méthode est utilisée pour créer un ordre **protective** (Take Profit ou Stop Loss)
    * à partir des paramètres fournis, avec `reduceOnly` forcé à true.
+   *
+   * `params.isBuy` est le côté de l'ORDRE, donc de la clôture : un stop qui ferme un long est
+   * une vente (`isBuy: false`). C'est ce que le bot envoie, et c'est de lui que dépend le sens
+   * du prix limite.
+   *
+   * Au marché (le défaut), le prix limite est écarté du déclencheur : voir
+   * `MARKET_TRIGGER_LIMIT_FACTOR`. Un déclencheur **limite** (`isMarket: false`) garde
+   * `p = triggerPx` : l'appelant ne donne qu'un prix, et en choisir un autre à sa place serait
+   * décider d'un ordre qu'il a voulu précis. ⚠️ C'est le cas que la doc officielle donne pour
+   * rester en attente dans un gap ; aucun appelant connu ne l'utilise.
    */
   public toHLOrderDetails(params: ProtectiveOrderParams): HLOrderDetails {
+    const isMarket = params.isMarket ?? true;
+
     return {
       assetName: params.assetName,
       isBuy: params.isBuy,
       sz: params.sz,
-      limitPx: params.price,
+      limitPx: isMarket ? this.marketTriggerLimitPx(params) : params.price,
       reduceOnly: true, // forcé pour SL / TP
       orderType: {
         trigger: {
-          isMarket: params.isMarket ?? true,
+          isMarket,
           triggerPx: params.price,
           tpsl: params.kind,
         },
       },
     };
+  }
+
+  /**
+   * Le déclencheur écarté de 10 %, écrit comme l'exchange l'exige. Un actif inconnu **échoue**
+   * : se rabattre sur des décimales par défaut ferait poser un prix que l'exchange refuse ou
+   * tronque, sur un ordre dont la seule fonction est de protéger.
+   */
+  private marketTriggerLimitPx(params: ProtectiveOrderParams): string {
+    const szDecimals = this.assetRegistry.getSzDecimals(params.assetName);
+    if (szDecimals === undefined) {
+      throw new HyperliquidGatewayException(
+        'UNKNOWN_ASSET',
+        `Unknown szDecimals for: ${params.assetName}`,
+      );
+    }
+
+    const factor = params.isBuy
+      ? MARKET_TRIGGER_LIMIT_FACTOR.buy
+      : MARKET_TRIGGER_LIMIT_FACTOR.sell;
+    // Arithmétique exacte : en flottant, 129,2 × 0,9 donne 116,27999999999999, que le formatage
+    // tronque à 116.27 au lieu de 116.28 (mesuré le 2026-10-18) — un tick de travers, sur un
+    // ordre dont le prix est tout l'objet.
+    const spread = this.decimalUtils.multiply(params.price, factor, 8, 'price');
+
+    return this.valueFormatter.formatPrice(
+      spread,
+      szDecimals,
+      this.assetRegistry.isPerp(params.assetName) ? 'perp' : 'spot',
+    );
   }
 
   private sortProtectiveOrders<T extends { price: string }>(

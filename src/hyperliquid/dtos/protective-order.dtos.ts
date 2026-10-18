@@ -23,6 +23,7 @@ export class ProtectiveOrderDto {
   })
   kind: HLProtectiveKind;
 
+  /** Côté de l'ORDRE (clôture) : false => vente, qui ferme un long. */
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   isBuy: boolean;
@@ -67,9 +68,12 @@ export class BatchProtectiveOrdersDto {
   assetName: string;
 
   /**
-   * Position side
-   * true  => buy (long)
-   * false => sell (short)
+   * Côté de l'ORDRE, donc de la clôture — pas celui de la position :
+   * true  => achat (ferme un short)
+   * false => vente (ferme un long)
+   *
+   * C'est ce que le bot envoie (`isBuy = !isLongEntry`), et de lui dépend le sens du prix
+   * limite d'un déclencheur au marché. Ce commentaire disait « Position side » : faux.
    */
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()

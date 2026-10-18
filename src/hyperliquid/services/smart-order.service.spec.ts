@@ -609,14 +609,14 @@ describe('SmartOrderService', () => {
             oid: 101,
             order: expect.objectContaining({
               sz: '0.6',
-              limitPx: '9100',
+              limitPx: '10010',
             }) as unknown as HLOrderDetails,
           }),
           expect.objectContaining({
             oid: 102,
             order: expect.objectContaining({
               sz: '0.35',
-              limitPx: '8100',
+              limitPx: '8910',
             }) as unknown as HLOrderDetails,
           }),
         ]),
@@ -756,7 +756,7 @@ describe('SmartOrderService', () => {
           expect.objectContaining({
             oid: 103,
             order: expect.objectContaining({
-              limitPx: '7900',
+              limitPx: '8690',
               sz: '0.25',
             }) as unknown,
           }), // SL
@@ -768,7 +768,7 @@ describe('SmartOrderService', () => {
         order: {
           assetName: 'BTC',
           isBuy: true,
-          limitPx: '9200',
+          limitPx: '10120',
           orderType: {
             trigger: { isMarket: true, tpsl: 'tp', triggerPx: '9200' },
           },
@@ -836,7 +836,7 @@ describe('SmartOrderService', () => {
           expect.objectContaining({
             oid: 102,
             order: expect.objectContaining({
-              limitPx: '7900',
+              limitPx: '8690',
               sz: '0.25',
             }) as unknown,
           }), // SL
@@ -848,7 +848,7 @@ describe('SmartOrderService', () => {
         order: {
           assetName: 'BTC',
           isBuy: true,
-          limitPx: '7600',
+          limitPx: '8360',
           orderType: {
             trigger: { isMarket: true, tpsl: 'sl', triggerPx: '7600' },
           },
@@ -920,14 +920,14 @@ describe('SmartOrderService', () => {
           expect.objectContaining({
             oid: 102,
             order: expect.objectContaining({
-              limitPx: '8200',
+              limitPx: '7380',
               sz: '0.6',
             }) as unknown,
           }), // TP
           expect.objectContaining({
             oid: 101,
             order: expect.objectContaining({
-              limitPx: '9100',
+              limitPx: '8190',
               sz: '0.25',
             }) as unknown,
           }), // SL
@@ -945,7 +945,7 @@ describe('SmartOrderService', () => {
         order: {
           assetName: 'BTC',
           isBuy: false,
-          limitPx: '9200',
+          limitPx: '8280',
           orderType: {
             trigger: {
               isMarket: true,
@@ -965,6 +965,98 @@ describe('SmartOrderService', () => {
       expect(result.sl.updated).toEqual([1888]); // SL 101 => SL 1888
       expect(result.sl.created).toEqual([201]);
       expect(result.sl.cancelled).toHaveLength(0);
+    });
+  });
+
+  /**
+   * Le prix limite `p` d'un ordre protecteur. Un déclencheur au marché porte un `p` écarté de
+   * 10 % (voir `MARKET_TRIGGER_LIMIT_FACTOR` et docs/protective-order-price.md) : sous le
+   * déclencheur pour une vente, au-dessus pour un achat. Les valeurs sont écrites en clair, pas
+   * relues depuis la constante : un test qui la relirait dirait toujours la même chose qu'elle.
+   */
+  describe('toHLOrderDetails — limit price of a protective order', () => {
+    const protective = (
+      overrides: Partial<Parameters<SmartOrderService['toHLOrderDetails']>[0]>,
+    ) =>
+      service.toHLOrderDetails({
+        assetName: 'BTC',
+        kind: 'sl',
+        isBuy: false,
+        sz: '0.01',
+        price: '81000',
+        ...overrides,
+      });
+
+    beforeEach(() => {
+      getSzDecimals.mockReturnValue(5); // BTC
+      isPerp.mockReturnValue(true);
+    });
+
+    it('puts a market stop that sells 10 % under its trigger', () => {
+      expect(protective({ isBuy: false }).limitPx).toBe('72900');
+    });
+
+    it('puts a market stop that buys 10 % over its trigger', () => {
+      expect(protective({ isBuy: true, price: '81000' }).limitPx).toBe('89100');
+    });
+
+    it('gives a market take profit the same spread as a stop', () => {
+      expect(protective({ kind: 'tp', isBuy: false }).limitPx).toBe('72900');
+    });
+
+    it('treats a missing isMarket as market, as the trigger itself does', () => {
+      const order = protective({ isMarket: undefined });
+      expect(order.orderType).toEqual({
+        trigger: { isMarket: true, triggerPx: '81000', tpsl: 'sl' },
+      });
+      expect(order.limitPx).toBe('72900');
+    });
+
+    it('leaves the trigger itself untouched: only the limit moves', () => {
+      const order = protective({});
+      expect(order.orderType).toMatchObject({
+        trigger: { triggerPx: '81000' },
+      });
+    });
+
+    it('keeps p equal to the trigger for a limit trigger: the caller gave one price only', () => {
+      const order = protective({ isMarket: false });
+      expect(order.limitPx).toBe('81000');
+      expect(order.orderType).toMatchObject({ trigger: { isMarket: false } });
+    });
+
+    it('writes the price the way the exchange requires: 5 significant figures, truncated', () => {
+      // 81234 × 0,9 = 73110,6 → 5 chiffres significatifs : 73110, jamais arrondi vers le haut.
+      expect(protective({ price: '81234' }).limitPx).toBe('73110');
+    });
+
+    it('does the arithmetic exactly: in floating point, 129.2 × 0.9 truncates one tick short', () => {
+      // 129,2 × 0,9 vaut 116,27999999999999 en flottant, tronqué à 116.27 au lieu de 116.28.
+      getSzDecimals.mockReturnValue(2);
+      expect(protective({ price: '129.2' }).limitPx).toBe('116.28');
+      expect(protective({ price: '129.7', isBuy: true }).limitPx).toBe(
+        '142.67',
+      );
+    });
+
+    it('applies the spot decimals rule to a spot market', () => {
+      getSzDecimals.mockReturnValue(2);
+      isPerp.mockReturnValue(false);
+      // Spot : jusqu'à 8 − szDecimals = 6 décimales, 5 chiffres significatifs au plus.
+      expect(
+        protective({ assetName: 'PURR/USDC', price: '0.123456' }).limitPx,
+      ).toBe('0.11111');
+    });
+
+    it('refuses an unknown asset rather than guessing decimals', () => {
+      getSzDecimals.mockReturnValue(undefined);
+      expect(() => protective({ assetName: 'NOPE' })).toThrow(
+        /Unknown szDecimals for: NOPE/,
+      );
+    });
+
+    it('never fails silently when the price is not a plain decimal', () => {
+      expect(() => protective({ price: 'abc' })).toThrow();
     });
   });
 

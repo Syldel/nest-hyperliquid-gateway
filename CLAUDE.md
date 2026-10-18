@@ -26,7 +26,7 @@ Ce qui en découle :
 **Un prix ou une taille mal écrits font refuser l'ordre, ou en font poser un autre.**
 Hyperliquid impose `szDecimals` sur les tailles, et sur les prix 5 chiffres significatifs
 et `MAX_DECIMALS - szDecimals` décimales — un prix entier échappant toujours aux chiffres
-significatifs. Ces règles vivent dans **`@syldel/hl-shared-types`**, importées ici *et* par le bot :
+significatifs. Ces règles vivent dans **`@syldel/hl-shared-types`**, importées ici _et_ par le bot :
 `ValueFormatterService` n'en est plus que la façade injectable. Deux implémentations, c'est
 la garantie qu'un émetteur croira un jour avoir posé autre chose que ce qui l'a été. Voir
 [docs/tick-and-lot-size.md](docs/tick-and-lot-size.md), y compris l'invariant du point fixe
@@ -99,7 +99,8 @@ ne dit rien de ce que le compilateur refuse. Les deux se lancent, pas l'un ou l'
   bon comportement sur un vrai compte en portfolio margin ne l'est pas — ces deux modes
   n'ont jamais pu être exercés. Voir
   [docs/account-abstraction.md](docs/account-abstraction.md).
-- Les ordres protecteurs (TP/SL, bot compris) partent avec `limitPx = triggerPx`, même en
-  `isMarket`. Si Hyperliquid applique `p` comme borne, un SL ne s'exécute pas dans un gap :
-  **non mesuré**, à éprouver en réel. Voir
+- Les ordres protecteurs (TP/SL, bot compris) au marché partent, depuis le 2026-10-18, avec un
+  `limitPx` à 10 % du déclencheur (avant : `limitPx = triggerPx`). Si Hyperliquid applique `p`
+  comme borne, un SL ne s'exécute pas dans un gap : le 10 % rend la question sans danger, mais
+  ce que l'exchange fait de `p` reste **non mesuré**, comme ce qu'il rend dans `limitPx`. Voir
   [docs/protective-order-price.md](docs/protective-order-price.md).
