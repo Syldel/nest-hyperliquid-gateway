@@ -1,4 +1,5 @@
 import type { CollateralBalance } from '@syldel/hl-shared-types';
+import { BadRequestException } from '@nestjs/common';
 import { HyperliquidInfoController } from './hyperliquid-info.controller';
 
 /**
@@ -86,5 +87,72 @@ describe('HyperliquidInfoController.getCollateralBalance', () => {
     await controller.getCollateralBalance('cash:TSLA', 'usdt');
 
     expect(getCollateralBalance).toHaveBeenCalledWith('cash:TSLA', 'usdt');
+  });
+});
+
+/**
+ * Sans `?asset=`, la clé est omise par JSON et la réponse ne respecte plus son
+ * type : le service répondrait `unknown-collateral` pour un marché `undefined`.
+ * Le contrôleur refuse avant d'appeler le service, comme `asset-id` pour `name`.
+ */
+describe('HyperliquidInfoController.getCollateralBalance — refuses a malformed query', () => {
+  const build = () => {
+    const getCollateralBalance = jest.fn();
+    const controller = new HyperliquidInfoController(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { getCollateralBalance } as never,
+    );
+    return { controller, getCollateralBalance };
+  };
+
+  it.each([
+    ['is missing', undefined, 'Query parameter "asset" is required'],
+    ['is empty', '', 'Query parameter "asset" is required'],
+    [
+      'is given twice (?asset=A&asset=B)',
+      ['ETH', 'BTC'],
+      'Query parameter "asset" must be given once',
+    ],
+  ])(
+    'answers 400 when `asset` %s, and reads no balance',
+    async (_, asset, message) => {
+      const { controller, getCollateralBalance } = build();
+
+      const refusal = controller.getCollateralBalance(asset as never);
+
+      await expect(refusal).rejects.toBeInstanceOf(BadRequestException);
+      await expect(refusal).rejects.toThrow(message);
+      expect(getCollateralBalance).not.toHaveBeenCalled();
+    },
+  );
+
+  it('answers 400 when `collateral` is given twice, instead of a TypeError (500) in the service', async () => {
+    const { controller, getCollateralBalance } = build();
+
+    const refusal = controller.getCollateralBalance('ETH', [
+      'USDC',
+      'USDT',
+    ] as never);
+
+    await expect(refusal).rejects.toBeInstanceOf(BadRequestException);
+    await expect(refusal).rejects.toThrow(
+      'Query parameter "collateral" must be given once',
+    );
+    expect(getCollateralBalance).not.toHaveBeenCalled();
+  });
+
+  it('still answers when `collateral` is absent: it is optional', async () => {
+    const { controller, getCollateralBalance } = build();
+    getCollateralBalance.mockResolvedValue({
+      status: 'unknown-collateral',
+      mode: 'unifiedAccount',
+    });
+
+    await expect(controller.getCollateralBalance('ETH')).resolves.toMatchObject(
+      { asset: 'ETH' },
+    );
   });
 });

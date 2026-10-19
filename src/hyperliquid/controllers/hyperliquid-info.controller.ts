@@ -308,8 +308,17 @@ export class HyperliquidInfoController {
    * de `asset`, le marché interrogé. C'est ici, et seulement ici, que `asset` est
    * ajouté — le service ne le rend plus (il en est le paramètre).
    *
-   * ⚠️ `asset` est le `?asset=` brut, non validé : sans lui la clé est omise par
-   * JSON et la réponse ne respecte plus son type. À refuser par un 400.
+   * `asset` est refusé en 400 s'il manque, est vide ou est répété : sans cela la
+   * clé serait omise par JSON (ou ce serait un tableau) et la réponse ne
+   * respecterait plus son type, sur un `unknown-collateral` au nom `undefined`.
+   * Pas de DTO ici : `forbidNonWhitelisted` rejetterait le `testnet` que le bot
+   * envoie, que cette route ignore aujourd'hui (voir ci-dessous).
+   *
+   * ⚠️ `testnet` n'est **pas** transmis au service : un client qui le demande
+   * reçoit le solde du mainnet. Le bot envoie toujours `testnet=false`.
+   *
+   * @throws {BadRequestException} Si `asset` (ou `collateral`, quand il est
+   * donné) n'est pas une chaîne non vide unique.
    */
   @Get('collateral-balance')
   @UseGuards(UserAuthGuard)
@@ -317,6 +326,21 @@ export class HyperliquidInfoController {
     @Query('asset') asset: string,
     @Query('collateral') collateral?: string,
   ): Promise<CollateralBalanceResponse> {
+    // Un `?asset=A&asset=B` arrive en tableau, et `collateral?.toUpperCase()`
+    // du service lèverait une TypeError (500) sur un `?collateral=` répété.
+    if (typeof asset !== 'string' || asset === '') {
+      throw new BadRequestException(
+        Array.isArray(asset)
+          ? 'Query parameter "asset" must be given once'
+          : 'Query parameter "asset" is required',
+      );
+    }
+    if (collateral !== undefined && typeof collateral !== 'string') {
+      throw new BadRequestException(
+        'Query parameter "collateral" must be given once',
+      );
+    }
+
     const balance = await this.collateralService.getCollateralBalance(
       asset,
       collateral,
