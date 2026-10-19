@@ -82,7 +82,6 @@ describe('HyperliquidCollateralService.getCollateralBalance', () => {
     await expect(service.getCollateralBalance('NOPE')).resolves.toEqual({
       status: 'unknown-collateral',
       mode: 'unifiedAccount',
-      asset: 'NOPE',
     });
   });
 
@@ -177,7 +176,6 @@ describe('HyperliquidCollateralService.getCollateralBalance', () => {
       await expect(service.getCollateralBalance('BTC')).resolves.toEqual({
         status: 'unsupported-mode',
         mode: 'portfolioMargin',
-        asset: 'BTC',
       });
     });
 
@@ -187,7 +185,6 @@ describe('HyperliquidCollateralService.getCollateralBalance', () => {
       await expect(service.getCollateralBalance('cash:TSLA')).resolves.toEqual({
         status: 'unsupported-mode',
         mode: 'dexAbstraction',
-        asset: 'cash:TSLA',
       });
     });
 

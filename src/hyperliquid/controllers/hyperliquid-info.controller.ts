@@ -17,7 +17,11 @@ import {
 } from '../dtos/hyperliquid-info.query.dto';
 import { UserAuthGuard } from '../../common/guards/user-auth.guard';
 import { AssetRegistryService } from '../services/asset-registry.service';
-import { HlActiveAssetData, HlUserFees } from '@syldel/hl-shared-types';
+import {
+  CollateralBalanceResponse,
+  HlActiveAssetData,
+  HlUserFees,
+} from '@syldel/hl-shared-types';
 import { HyperliquidCollateralService } from '../services/hyperliquid-collateral.service';
 
 @Controller('hyperliquid/info')
@@ -299,13 +303,20 @@ export class HyperliquidInfoController {
    * Récupère le solde du collatéral (total et utilisé) pour un actif donné.
    * Route automatiquement la requête selon le mode du compte (unifié ou cloisonné).
    * Résout le collatéral par défaut selon le DEX si non fourni.
+   *
+   * La réponse est `CollateralBalanceResponse` : le résultat du service, précédé
+   * de `asset`, le marché interrogé. C'est ici, et seulement ici, que `asset` est
+   * ajouté — le service ne le rend plus (il en est le paramètre).
+   *
+   * ⚠️ `asset` est le `?asset=` brut, non validé : sans lui la clé est omise par
+   * JSON et la réponse ne respecte plus son type. À refuser par un 400.
    */
   @Get('collateral-balance')
   @UseGuards(UserAuthGuard)
   async getCollateralBalance(
     @Query('asset') asset: string,
     @Query('collateral') collateral?: string,
-  ) {
+  ): Promise<CollateralBalanceResponse> {
     const balance = await this.collateralService.getCollateralBalance(
       asset,
       collateral,

@@ -406,19 +406,24 @@ describe('SmartOrderService', () => {
       getCollateralBalance.mockResolvedValue({
         status: 'unknown-collateral',
         mode: 'unifiedAccount',
+      });
+
+      // Le nom du marché vient de la requête : le résultat du service ne le porte plus.
+      const refusal = service.resolveQuoteFromPercent({
+        percent: '0.1',
         asset: 'NOPE',
       });
 
-      await expect(
-        service.resolveQuoteFromPercent({ percent: '0.1', asset: 'NOPE' }),
-      ).rejects.toMatchObject({ response: { error: 'UNKNOWN_COLLATERAL' } });
+      await expect(refusal).rejects.toMatchObject({
+        response: { error: 'UNKNOWN_COLLATERAL' },
+      });
+      await expect(refusal).rejects.toThrow('"NOPE"');
     });
 
     it('tells an unreadable account mode apart from a lack of funds', async () => {
       getCollateralBalance.mockResolvedValue({
         status: 'unsupported-mode',
         mode: 'portfolioMargin',
-        asset: 'BTC',
       });
 
       await expect(

@@ -137,7 +137,7 @@ export class HyperliquidCollateralService {
     // `dexAbstraction` est arrêté par l'exchange : la doc le décrit, aucun
     // compte ne permet de l'éprouver.
     if (mode === 'portfolioMargin' || mode === 'dexAbstraction') {
-      return { status: 'unsupported-mode', mode, asset: assetName };
+      return { status: 'unsupported-mode', mode };
     }
 
     // Le collatéral se **dérive** du catalogue : `collateralToken` pour un
@@ -153,7 +153,7 @@ export class HyperliquidCollateralService {
     // peuvent partager un symbole, aucun ne partage un index.
     const override = collateral?.toUpperCase();
     if (!override && tokenIndex === undefined) {
-      return { status: 'unknown-collateral', mode, asset: assetName };
+      return { status: 'unknown-collateral', mode };
     }
 
     const symbol =

@@ -323,7 +323,7 @@ export class SmartOrderService {
     if (balanceInfo.status === 'unknown-collateral') {
       throw new HyperliquidGatewayException(
         'UNKNOWN_COLLATERAL',
-        `Cannot determine which asset "${balanceInfo.asset}" settles in`,
+        `Cannot determine which asset "${asset}" settles in`,
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
     }
