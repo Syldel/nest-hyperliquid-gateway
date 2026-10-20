@@ -623,13 +623,7 @@ export class SmartOrderService {
    * refuse ou tronque, sur un ordre dont la seule fonction est de protéger.
    */
   private marketTriggerLimitPx(params: ProtectiveOrderParams): string {
-    const szDecimals = this.assetRegistry.getSzDecimals(params.assetName);
-    if (szDecimals === undefined) {
-      throw new HyperliquidGatewayException(
-        'UNKNOWN_ASSET',
-        `Unknown szDecimals for: ${params.assetName}`,
-      );
-    }
+    const szDecimals = this.requireSzDecimals(params.assetName);
 
     const factor = params.isBuy
       ? MARKET_TRIGGER_LIMIT_FACTOR.buy
@@ -653,6 +647,23 @@ export class SmartOrderService {
       : this.addOneTick(truncated, decimals);
 
     return this.valueFormatter.formatPrice(rounded, szDecimals, marketType);
+  }
+
+  /**
+   * La grille de taille d'un actif, ou une **erreur**. Jamais un défaut : formater sur 6 décimales un actif
+   * dont la grille est 2 pose un prix ou une taille que l'exchange refuse ou que le gateway tronque
+   * autrement que le demandeur ne le croit. Deux endroits la remplaçaient en silence par 6
+   * (`normalizeModifyInput`, `canonicalOrRaw`) alors que `marketTriggerLimitPx` refusait déjà.
+   */
+  private requireSzDecimals(assetName: string): number {
+    const szDecimals = this.assetRegistry.getSzDecimals(assetName);
+    if (szDecimals === undefined) {
+      throw new HyperliquidGatewayException(
+        'UNKNOWN_ASSET',
+        `Unknown szDecimals for: ${assetName}`,
+      );
+    }
+    return szDecimals;
   }
 
   /** Un tick de plus : une unité du dernier chiffre permis, `decimals` décimales. */
@@ -740,7 +751,7 @@ export class SmartOrderService {
       return null;
     }
 
-    const szDecimals = this.assetRegistry.getSzDecimals(m.order.assetName) ?? 6;
+    const szDecimals = this.requireSzDecimals(m.order.assetName);
     const isPerp = this.assetRegistry.isPerp(m.order.assetName);
 
     return {
@@ -771,7 +782,15 @@ export class SmartOrderService {
     assetName: string,
     field: 'price' | 'size',
   ): string {
-    const szDecimals = this.assetRegistry.getSzDecimals(assetName) ?? 6;
+    const szDecimals = this.assetRegistry.getSzDecimals(assetName);
+    if (szDecimals === undefined) {
+      // Pas de grille devinée : formater sur 6 décimales aurait écrit l'ordre de l'exchange autrement qu'il
+      // ne l'est, donc jugé « changé » à chaque appel et modifié à chaque passage. Comparé tel quel, et dit.
+      this.logger.warn(
+        `[${assetName}] szDecimals unknown to the registry: existing protective ${field} ${value} is compared raw.`,
+      );
+      return value;
+    }
     const isPerp = this.assetRegistry.isPerp(assetName);
 
     try {

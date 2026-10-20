@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 
 import {
@@ -1152,6 +1153,13 @@ describe('SmartOrderService', () => {
       { oid: 100, price: '3000', sz: '1.5', kind: 'tp', isMarket: true },
     ];
 
+    // Ces tests ne déclaraient aucune grille : ils passaient par le repli `?? 6`, c'est-à-dire sur un
+    // mensonge. ETH a `szDecimals` 4 sur l'exchange.
+    beforeEach(() => {
+      getSzDecimals.mockReturnValue(4);
+      isPerp.mockReturnValue(true);
+    });
+
     const createBaseModList = (
       sz: string,
       price: string,
@@ -1231,6 +1239,62 @@ describe('SmartOrderService', () => {
         assetName,
       });
       expect(result).toHaveLength(1);
+    });
+
+    // Il formatait sur 6 décimales un actif inconnu du registre : une taille `1.5678` sur un actif de grille 2
+    // se comparait comme telle, donc « changée » ou « inchangée » à tort. La demande, elle, doit être exacte.
+    it('refuses an asset whose grid the registry does not know, instead of formatting on 6 decimals', () => {
+      getSzDecimals.mockReturnValue(undefined);
+      const modList = createBaseModList('1.5', '3000', 'tp', true);
+
+      expect(() =>
+        service['filterUnchangedOrders']({ modList, existing, assetName }),
+      ).toThrow(/Unknown szDecimals for: ETH/);
+    });
+  });
+
+  // Les ordres que l'exchange détient sont valides par construction : leur écriture canonique ne peut rien perdre.
+  // Sans grille connue on ne devine pas : on les compare tels quels, et on le dit.
+  describe('canonicalOrRaw', () => {
+    let warnSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+    });
+
+    afterEach(() => warnSpy.mockRestore());
+
+    it('writes a value the way the request will, on the grid of its own asset', () => {
+      getSzDecimals.mockReturnValue(2);
+      isPerp.mockReturnValue(true);
+
+      // L'exchange rend `1103.0` quand `formatPrice` écrit `1103` : la même valeur, deux écritures.
+      expect(service['canonicalOrRaw']('1103.0', 'SOL', 'price')).toBe('1103');
+      expect(service['canonicalOrRaw']('1.960', 'SOL', 'size')).toBe('1.96');
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('keeps the raw value, and says so, when the registry does not know the grid', () => {
+      getSzDecimals.mockReturnValue(undefined);
+
+      expect(service['canonicalOrRaw']('1103.0', 'NOPE', 'price')).toBe(
+        '1103.0',
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          '[NOPE] szDecimals unknown to the registry: existing protective price 1103.0 is compared raw',
+        ),
+      );
+    });
+
+    // `?? 6` aurait réécrit `1.500` en `1.5` sur une grille inventée : l'écriture de l'exchange n'est pas la nôtre
+    // à corriger. Le brut reste le brut.
+    it('does not rewrite a size on a guessed grid', () => {
+      getSzDecimals.mockReturnValue(undefined);
+
+      expect(service['canonicalOrRaw']('1.500', 'NOPE', 'size')).toBe('1.500');
     });
   });
 });
