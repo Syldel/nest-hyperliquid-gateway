@@ -190,12 +190,19 @@ des ordres à déclencheur par `f: true`, elle écrit au présent.
 ⚠️ **Ce qui n'est pas établi :**
 
 - **La date d'application**, et si la règle l'est déjà dans un cas ou sur le testnet : rien ici ne la donne. L'annonce Telegram
-  n'a pas été lue ; la date du SDK la borne par le haut, elle ne la fixe pas. La page de la doc n'a été lue que sur ses
-  100 000 premiers caractères (sur environ 120 000) et n'y montrait aucune date de mise à jour.
+  n'a pas été lue ; la date du SDK la borne par le haut, elle ne la fixe pas. La doc, relue **en brut** (`curl`, sans outil qui
+  résume) le 2026-10-27, n'aide pas : la page de l'endpoint (120 880 octets, en entier), celle des erreurs et celle de la latence
+  ne montrent ni date ni « last updated », et l'index `llms.txt` (159 lignes) ne liste aucune page de journal des changements,
+  d'annonces ou de mises à niveau. Ces changements ne s'annoncent donc que sur le canal Telegram de l'API : à suivre par une
+  personne, aucun test ne les verra.
 - **Que la règle vise ce que le PR en dit** : c'est la lecture d'un tiers, pas un énoncé de l'exchange. L'hypothèse d'un cas plus
   étroit (le nouvel ordre posé quand l'annulation a échoué) n'est pas écartée.
 - **La lecture des PR** est passée par un outil de lecture qui résume : les citations rendues étaient littérales, mais le JSON
   brut n'a pas été relu.
+- **Ce que la doc ne donne pas pour `modify`** (relue en brut le 2026-10-27) : la section `modify` a deux onglets de réponse,
+  « Successful Response » et « Error Response », **vides** ; la section `batchModify` n'en a aucun. La forme d'une réponse de
+  modification, et celle de son refus, ne sont donc écrites nulle part. La doc place en revanche `a` **au niveau de l'action**,
+  après `order` (`modify`) ou `modifies` (`batchModify`) : un seul drapeau pour tout un lot.
 
 **Ce que ça change pour le risque** — et il ne tient pas à l'adoption de l'ordre de position :
 
@@ -203,7 +210,7 @@ des ordres à déclencheur par `f: true`, elle écrit au présent.
   take-profits de protection) et n'envoie jamais `a`. Si la règle était appliquée, chacun de ces `modify` serait refusé. La route
   `position-protective/modify` n'a pas de repli et échouerait bruyamment.
 - **Ce que le réalignement fait d'un refus, depuis le 2026-10-27** (`smart-order.service.ts`, `placeBatchProtectiveOrders`). On
-  ignore quelle forme l'exchange emploierait ; trois sont possibles, lues dans le code, aucune observée :
+  ignore quelle forme l'exchange emploierait ; quatre sont possibles, lues dans le code, aucune observée :
   - un refus **par ordre** dans une réponse `ok` (`statuses[i].error`) : inchangé. `Failed to modify order` dans le journal, puis
     repli par annulation + recréation, avec la seconde sans protection que `batchModify` évitait. Ce repli a maintenant un test,
     il n'en avait aucun ;
@@ -214,6 +221,16 @@ des ordres à déclencheur par `f: true`, elle écrit au présent.
     qu'il arrive (`batchModify of N protective order(s) refused as a whole`), le plan continue, puis le gateway lève
     `EXCHANGE_BATCH_MODIFY_REFUSED` en **422**, dont le message porte la réponse brute et ce que l'exchange a accepté du reste du
     plan ;
+  - un `ok` dont les statuts **ne se comptent pas un par modification** : un seul statut pour un lot de deux, une liste vide ou
+    absente (ni `data`, ni `response`), un statut de trop. _Avant_ : `if (!status) return;` sautait sans un mot les modifications
+    sans statut ; un statut d'erreur isolé déclenchait le repli annulation + recréation pour le **seul premier** ordre, et la
+    modification du stop disparaissait sans trace (reproduit avec un double le 2026-10-27) ; une liste ou des `data` absents
+    levaient un `TypeError` **avant** l'envoi des annulations et des créations, donc un stop manquant n'était même pas posé.
+    _Maintenant_ : rien n'est attribué (ni `updated`, ni repli par ordre), le gateway journalise la réponse brute
+    (`batchModify of N protective order(s) answered ok with K status(es), which cannot be matched one to one`), termine le plan,
+    puis lève **422 `EXCHANGE_BATCH_MODIFY_UNMATCHED`**. Un code distinct de `…_REFUSED`, parce que « refusé » serait faux pour une
+    liste trop longue, et que ce cas dit autre chose : une forme de réponse jamais vue, à mesurer. Ce que la doc en dit est plus
+    bas ;
   - une erreur HTTP : l'exception remonte (`MAX_RETRIES = 1`, pas de relance), donc bruyante.
 - **Pourquoi le plan continue avant de lever.** Lever dès le refus laissait sans stop une position dont le stop manque et dont un
   TP périmé est refusé : mesuré dans une copie jetable le 2026-10-27, l'ancien code posait le stop, une version qui lève d'emblée
@@ -223,29 +240,44 @@ des ordres à déclencheur par `f: true`, elle écrit au présent.
   (`Failed to realign protective orders`, paire `unprotected` avec la raison). Le gateway emploie déjà 422 pour ses refus clairs.
   ⚠️ C'est un couplage avec la classification du bot : si elle change, ce choix devient faux sans qu'un test le dise (les tests
   figent le numéro, pas la raison).
-- **Le signal précoce compte donc trois traces** : `Failed to modify order` (refus par ordre), `refused as a whole` dans le journal
-  du gateway, et, côté bot, `Failed to realign protective orders: EXCHANGE_BATCH_MODIFY_REFUSED`. Un `cancelled` non nul au retour
-  de `batch-protective` reste la trace du repli par ordre.
+- **Le signal précoce compte donc quatre traces** : `Failed to modify order` (refus par ordre), `refused as a whole` et
+  `cannot be matched one to one` dans le journal du gateway, et, côté bot, `Failed to realign protective orders` suivi de
+  `EXCHANGE_BATCH_MODIFY_REFUSED` ou `EXCHANGE_BATCH_MODIFY_UNMATCHED`. Un `cancelled` non nul au retour de `batch-protective`
+  reste la trace du repli par ordre.
 
 - **`a: true` n'a pas été mesuré sur un stop, et n'est pas à activer sans mesure** : il poserait le nouvel ordre même si
   l'annulation avait échoué, par exemple parce que l'ancien venait de se déclencher. L'envoyer demanderait aussi les types
   partagés (champ optionnel, **omis** quand il est faux : jamais `a: false`), le gateway, puis le bot — un changement qui traverse
-  les trois dépôts, à coordonner par un tag — et de savoir où la clé se place dans l'action signée (la signature hache l'action
-  sérialisée, l'ordre des clés peut compter : inféré, non vérifié dans notre code).
+  les trois dépôts, à coordonner par un tag — et de savoir où la clé se place dans l'action signée (la doc la montre au niveau de
+  l'action, donc valable pour tout le lot ; mais la signature hache l'action sérialisée, l'ordre des clés peut compter : inféré,
+  non vérifié dans notre code).
 - **`f: true` n'est pas utilisable pour annuler un stop ou un take-profit.** Si un chemin d'urgence veut un jour une annulation
   prioritaire, elle ne vaudra pas pour les ordres à déclencheur.
 
 ⚠️ **Ce qui n'est toujours pas établi pour ce durcissement :**
 
 - **Le texte réel d'un refus** de `modify` sur un déclencheur : les tests emploient un libellé marqué « placeholder », que le code
-  ne lit pas. Que `err` veuille dire « rien n'a été modifié » est le sens du format, non mesuré pour un lot : le message dit
-  « not reported as applied » et demande de relire le carnet.
+  ne lit pas. La doc ne le donne pas non plus (voir plus haut : onglets de réponse vides). Que `err` veuille dire « rien n'a été
+  modifié » est le sens du format, non mesuré pour un lot : le message dit « not reported as applied » et demande de relire le
+  carnet.
+- **Que l'erreur unique de pré-validation existe pour un `batchModify`, et sous quelle enveloppe** (`err`, ou `ok` avec un seul
+  statut). La page des erreurs, lue en brut, décrit ce cas pour les **ordres et les annulations** : une pré-validation en échec
+  rend une seule erreur pour tout le lot, la réponse pouvant être dupliquée n fois avant d'être remise au callback, et elle
+  recommande de traiter ce cas. Elle ne dit pas qui duplique, ni sur le fil ni dans le SDK, ni rien de `modify`. Les deux
+  enveloppes sont couvertes, aucune n'est observée. Elle dit aussi que ces erreurs sont une fonction déterministe du payload ; la
+  règle de `a` en est peut-être une (type de l'ordre et drapeau), mais sa clause « GTC non exécutable » dépend du carnet :
+  **inféré, non tranché**.
+- **Avec une seule modification, un unique statut est lu comme celui de cet ordre** (repli par annulation + recréation), alors
+  qu'une erreur de pré-validation de tout le lot lui est alors indiscernable : un test le fige, sans pouvoir le résoudre. Et quand
+  les nombres ne concordent pas, **rien** n'est attribué, même un `resting` isolé : on préfère sous-déclarer (le message demande
+  de relire le carnet) que créditer le mauvais ordre.
 - **Côté bot**, la réaction à un 422 est lue dans le code, pas exercée avec ce gateway, et le faux gateway du bot
   (`gateway-contract.ts`) ne modélise pas ce refus.
 - **Pas de repli annulation + recréation pour un lot refusé en entier** : sa cause est inconnue, et ce repli ouvre une fenêtre sans
   protection. À décider quand on connaîtra le texte réel du refus.
-- **Deux trous voisins, non traités** : un échec de l'annulation (réponse non `ok`) est seulement journalisé, et une création qui
-  reçoit une réponse non `ok` lève un `TypeError`. Le même mécanisme (consigner, finir, lever) pourrait les couvrir.
+- **Trois trous voisins, non traités** : un échec de l'annulation (réponse non `ok`) est seulement journalisé, une création qui
+  reçoit une réponse non `ok` lève un `TypeError`, et un élément `null` ou absent dans une liste **de la bonne longueur** est
+  encore sauté par `if (!status) return;`. Le même mécanisme (consigner, finir, lever) pourrait les couvrir.
 - **Si une écriture suivante du même plan lève avant la fin**, le refus n'existe plus que dans le journal (un test le fige).
 
 C'est le cas inverse de celui qui a fait écrire ce document : ici la doc est précise et la mesure la dément **à la lettre** —
