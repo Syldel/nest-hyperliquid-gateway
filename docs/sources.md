@@ -231,8 +231,51 @@ PR #157 (2026-06-19) ont eu besoin de `a`. Elle n'expliquerait pas ses tests à 
   notée.
 - **Ce que la doc ne donne pas pour `modify`** (relue en brut le 2026-10-27) : la section `modify` a deux onglets de réponse,
   « Successful Response » et « Error Response », **vides** ; la section `batchModify` n'en a aucun. La forme d'une réponse de
-  modification, et celle de son refus, ne sont donc écrites nulle part. La doc place en revanche `a` **au niveau de l'action**,
+  modification, et celle de son refus, ne sont donc écrites nulle part (la mesure du 2026-10-27 en donne un cas : voir la section « Ce qu'un `modify` refusé répond », juste en dessous). La doc place en revanche `a` **au niveau de l'action**,
   après `order` (`modify`) ou `modifies` (`batchModify`) : un seul drapeau pour tout un lot.
+
+### Ce qu'un `modify` refusé répond (mesuré le 2026-10-27)
+
+**Un seul cas, un seul motif de refus.** Sonde `nest-trading-bot/scripts/live-check/modify-refused-api.ts`, mainnet, compte
+`rabby_01`, ETH, un ordre de 12 $ posé à 15 % sous le marqué ; gateway `f932926` et bot `300267f`, ni l'un ni l'autre modifié
+localement. Le déroulé, les pièces et le coût : `nest-trading-bot/docs/hyperliquid/live-check.md`, « Le `modify` refusé ». Route
+ordinaire `/hyperliquid/order/modify`, celle de l'application mobile, et non la famille `position-protective`.
+
+- **Un `modify` qui croise, sur un ALO** (nouveau prix 2392,4 pour un marqué de 2345,5, TIF `Alo` gardée) : HTTP 200,
+  `{"status":"err","response":"Error placing new order during modify: Post only order would have immediately matched, bbo was 2345.4@2345.5."}`.
+  Une **chaîne** dans `response` : ni `statuses`, ni `data`.
+- **L'ordre d'origine a été annulé par ce refus.** `order-status` de l'oid donne `canceled`, horodaté 20:23:38.094Z : l'instant du
+  `modify` (envoyé à 20:23:37.142Z, réponse en 0,7 s ; le `place` précédent montre le même décalage d'horloge, environ 0,3 s
+  entre la réponse reçue et l'horodatage de l'exchange). Le même lancement avait listé l'ordre ouvert à 20:23:36.895Z, avant l'envoi, et la liste relue à 20:23:37.839Z, juste après la réponse, était vide (`captures/modify-refused-api-modify-2026-10-27T20-23-36-349Z.jsonl`). Rien d'autre n'écrivait sur le compte à notre connaissance (bot arrêté, port 3001 libre) ; l'application mobile et l'interface de l'exchange n'ont pas été exclues formellement. Un seul essai, sans répétition. Le message le
+  dit : « Error placing new order _during modify_ ». L'exchange annule l'ancien ordre puis tente de poser le nouveau, et le refus
+  du second laisse l'annulation du premier. Cela s'accorde avec un `modify` réussi, que le stop de position avait montré le
+  même jour : l'ancien ordre passe `canceled`, le nouveau naît à la même milliseconde sous un autre oid (`live-check.md`, stop
+  de position, pas 3).
+- **Un `modify` d'un oid déjà annulé** : HTTP 200, `{"status":"err","response":"Cannot modify canceled or filled order"}`. Rien
+  n'a été créé : `order-status` inchangé, compte inchangé (24,46985682 USDC avant et après, ni position ni ordre).
+- **Le gateway n'écrit rien** pour ces refus. Il relaie l'enveloppe `err` brute en HTTP 200 (seul un refus de débit par adresse
+  devient une exception, `executeWithNonce`), et son journal ne contient que les lignes de démarrage. `Failed to modify order` ne
+  se déclenche donc pas ici : cette trace ne couvre que les refus **par ordre** d'un `batchModify`.
+
+**Ce que ça change.**
+
+- **`status: 'err'` ne veut pas dire « rien n'a été modifié ».** Pour un `modify` seul, il peut vouloir dire « l'ordre n'existe
+  plus ».
+- **L'écran « Edit Order » de l'application mobile** ne lit que `status === 'ok'` : d'après le code, sur ce refus il afficherait « Failed to update
+  order. » (la raison de l'exchange est écartée) alors que l'ordre n'est plus ouvert. Pour un stop, c'est le pire cas. ⚠️ **Lu dans le code, pas vu à l'écran** : le formulaire n'a pas été exercé sur un refus réel.
+
+⚠️ **Ce qui n'est pas établi.**
+
+- **Les autres motifs de refus.** Un post-only qui croise est un refus du **nouvel** ordre. Pour un prix ou une taille invalides,
+  un déclencheur, un minimum non atteint, le refus peut tomber avant l'annulation ou après : non mesuré.
+- **Un `batchModify` refusé.** Non mesuré. L'hypothèse de ce document (plus bas : un lot refusé n'a « rien modifié ») est
+  désormais **suspecte** pour les stops que le réalignement modifie. Le 422 `EXCHANGE_BATCH_MODIFY_REFUSED` demande déjà de relire
+  le carnet, ce qui reste la bonne réaction ; le chemin du bot qui s'y suit n'a pas été relu pour cette question.
+- **Un `Gtc` modifié pour croiser** (le 325 dit : transformé en ALO) n'a pas été essayé, parce qu'il pourrait s'exécuter. C'est
+  pourtant l'édition réaliste d'un ordre limite à l'écran.
+- **Le succès sur cette route.** La forme `{"status":"ok","response":{"type":"default"}}` vient de la route
+  `position-protective/modify`, pas de `/hyperliquid/order/modify`. Et la forme `ok` avec `statuses[i].error` pour un `modify`
+  seul n'a jamais été observée.
 
 ### Ce que le canal d'annonces dit (messages 306 à 384 relevés le 2026-10-27, ceux qui nous concernent ci-dessous)
 
@@ -256,9 +299,12 @@ l'heure de `t.me` plus deux heures). Ce décompte tombe à la minute près sur t
   tard. Elle ne dit rien des ordres à déclencheur. Les `modify` que le gateway et le bot
   envoient d'eux-mêmes sont à déclencheur (réalignement des protections, ordre de position). Le gateway expose aussi un `modify` ordinaire
   (`/hyperliquid/order/modify`) : le bot n'a aucun appelant de ses méthodes `modifyOrder` et `batchModifyOrders` (relevé du
-  2026-10-27), mais l'application mobile modifie ainsi un ordre ouvert (`order-form.component.ts`). ⚠️ **Non relu pour ce
-  document** : la TIF que ce formulaire envoie, et donc ce que devient, après le 325, l'édition d'un ordre limite vers un prix
-  qui croise le carnet.
+  2026-10-27), mais l'application mobile modifie ainsi un ordre ouvert (`order-form.component.ts`). Relu le
+  2026-10-27 : ce formulaire envoie la TIF de son sélecteur (par défaut `Alo` ; reprise de l'ordre édité s'il est `Alo`, `Ioc` ou
+  `Gtc`, sinon retombée silencieuse sur `Alo`), jamais `a`, et ne lit que `status === 'ok'` pour annoncer le succès.
+  ⚠️ **Mesuré pour un seul cas** : un `Alo` modifié vers un prix qui croise est refusé **et son ordre d'origine est annulé** (voir
+  « Ce qu'un `modify` refusé répond »). Ce que devient un `Gtc` modifié pour croiser (le 325 dit : transformé en ALO, donc refusé de
+  même) n'a pas été essayé, parce qu'il pourrait s'exécuter.
 - **326** (2026-06-09, 11:36 UTC) : les fréquences d'envoi de plusieurs abonnements **WebSocket** changent « à la prochaine mise à
   niveau » (`l2Book`, `allMids`, `spotAssetCtxs`, `allDexsAssetCtxs`, `webData2`), puis corrigées par le message 327. **Aucun
   usage chez nous** : aucune occurrence de `WebSocket` ni de `wss://` dans `src/` du gateway, du bot et de l'application mobile
@@ -341,7 +387,7 @@ distinguer l'ancienne base de la nouvelle : lecture, non éprouvée.
 
 - **Le réalignement d'aujourd'hui y est exposé.** Il passe par `batchModify` sur les ordres `reduceOnly` à déclencheur (stops et
   take-profits de protection) et n'envoie jamais `a`. Si la règle était appliquée, chacun de ces `modify` serait refusé. La route
-  `position-protective/modify` n'a pas de repli et échouerait bruyamment.
+  `position-protective/modify` n'a pas de repli et échouerait bruyamment. ⚠️ Depuis la mesure du 2026-10-27 (« Ce qu'un `modify` refusé répond »), « échouerait bruyamment » est **incomplet** : un `modify` refusé a pu annuler l'ordre d'origine, donc le stop pourrait avoir disparu en même temps que l'erreur apparaît. Mesuré pour un ALO non déclencheur, jamais pour un déclencheur ni pour un lot.
 - **Ce que le réalignement fait d'un refus, depuis le 2026-10-27** (`smart-order.service.ts`, `placeBatchProtectiveOrders`). On
   ignore quelle forme l'exchange emploierait ; quatre sont possibles, lues dans le code, aucune observée :
   - un refus **par ordre** dans une réponse `ok` (`statuses[i].error`) : inchangé. `Failed to modify order` dans le journal, puis
@@ -391,8 +437,10 @@ distinguer l'ancienne base de la nouvelle : lecture, non éprouvée.
 
 - **Le texte réel d'un refus** de `modify` sur un déclencheur : les tests emploient un libellé marqué « placeholder », que le code
   ne lit pas. La doc ne le donne pas non plus (voir plus haut : onglets de réponse vides). Que `err` veuille dire « rien n'a été
-  modifié » est le sens du format, non mesuré pour un lot : le message dit « not reported as applied » et demande de relire le
-  carnet.
+  modifié » était le sens du format supposé ; **mesuré faux pour un `modify` seul** (2026-10-27, voir « Ce qu'un `modify` refusé
+  répond » : l'ordre d'origine est annulé), non mesuré pour un lot. Le message dit « not reported as applied » et demande de
+  relire le carnet, ce qui reste la bonne réaction. Le texte réel d'un refus de `modify` est connu pour un cas sans déclencheur
+  (deux libellés, dans cette même section), pas pour un déclencheur.
 - **Que l'erreur unique de pré-validation existe pour un `batchModify`, et sous quelle enveloppe** (`err`, ou `ok` avec un seul
   statut). La page des erreurs, lue en brut, décrit ce cas pour les **ordres et les annulations** : une pré-validation en échec
   rend une seule erreur pour tout le lot, la réponse pouvant être dupliquée n fois avant d'être remise au callback, et elle
@@ -407,7 +455,7 @@ distinguer l'ancienne base de la nouvelle : lecture, non éprouvée.
 - **Côté bot**, la réaction à un 422 est lue dans le code, pas exercée avec ce gateway, et le faux gateway du bot
   (`gateway-contract.ts`) ne modélise pas ce refus.
 - **Pas de repli annulation + recréation pour un lot refusé en entier** : sa cause est inconnue, et ce repli ouvre une fenêtre sans
-  protection. À décider quand on connaîtra le texte réel du refus.
+  protection. À décider quand on connaîtra le texte réel du refus d'un lot (celui d'un `modify` seul est connu depuis le 2026-10-27, et ce refus-là a annulé l'ordre d'origine : relire le carnet avant tout repli).
 - **Trois trous voisins, non traités** : un échec de l'annulation (réponse non `ok`) est seulement journalisé, une création qui
   reçoit une réponse non `ok` lève un `TypeError`, et un élément `null` ou absent dans une liste **de la bonne longueur** est
   encore sauté par `if (!status) return;`. Le même mécanisme (consigner, finir, lever) pourrait les couvrir.
