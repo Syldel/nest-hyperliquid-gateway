@@ -633,14 +633,43 @@ export class SmartOrderService {
     };
   }
 
-  /** Le statut d'un ordre accepté, ou une erreur : la même lecture que `placeProtectiveOrder`. */
+  /**
+   * Lit la réponse d'une écriture de TP/SL de position. Ce n'est PAS la lecture de `placeProtectiveOrder` : le statut d'un
+   * ordre de position n'a pas la forme d'un ordre ordinaire.
+   *
+   * **Mesuré le 2026-10-27**, sur le premier stop de position créé par ce gateway (oid 587180894330) : le statut est la
+   * CHAÎNE `"waitingForTrigger"`, **sans oid**, et non un objet `resting` / `filled`. Le premier jet lisait
+   * `'error' in status` : un `TypeError` sur une chaîne, donc un 500 alors que l'exchange avait posé l'ordre — le pire des
+   * échecs, celui qui ne dit pas si l'ordre existe. Conséquence à retenir : on ne retrouve l'oid d'un ordre de position
+   * qu'en lisant les ordres ouverts, jamais dans la réponse de sa création.
+   *
+   * Règle : chaque forme reconnue est acceptée pour une raison écrite ; toute autre échoue AVEC la réponse brute dans le
+   * message et la mention que l'ordre a pu être posé. La réponse brute est aussi journalisée, succès compris : tant que
+   * cette famille est en cours de mesure, le journal est une pièce du dossier.
+   */
   private requireAcceptedOrder(
     response: Awaited<
       ReturnType<HyperliquidApiTradeService['placePositionLevelOrder']>
     >,
   ) {
-    const statuses = response.response.data.statuses;
-    if (!statuses || statuses.length === 0) {
+    const raw = JSON.stringify(response);
+    this.logger.log(`Position-level order answer: ${raw}`);
+
+    // Lu sans se fier au type partagé : il décrit des statuts-objets, et c'est précisément ce qui a été démenti.
+    const envelope = (
+      response as unknown as {
+        response?: { type?: string; data?: { statuses?: unknown[] } };
+      }
+    ).response;
+    const statuses = envelope?.data?.statuses;
+
+    if (statuses === undefined) {
+      // L'accusé générique de l'exchange (`updateLeverage` répond ainsi). Jamais vu pour une modification : accepté parce
+      // que l'exchange dit `ok`, et le carnet qu'on relit ensuite dit ce qui en est.
+      if (envelope?.type === 'default') return response;
+      throw this.unexpectedPositionLevelAnswer(raw);
+    }
+    if (statuses.length === 0) {
       throw new HyperliquidGatewayException(
         'EXCHANGE_EMPTY_RESPONSE',
         'No order status returned from Hyperliquid API',
@@ -650,16 +679,31 @@ export class SmartOrderService {
 
     const status = statuses[0];
 
-    if ('error' in status) {
-      const code = this.mapOrderErrorToCode(status.error);
-      throw new HyperliquidGatewayException(
-        `EXCHANGE_ERROR_${code.toUpperCase()}`,
-        `Hyperliquid execution error: ${status.error}`,
-        HttpStatus.BAD_GATEWAY,
-      );
+    if (status === 'waitingForTrigger') return response;
+
+    if (typeof status === 'object' && status !== null) {
+      if ('error' in status) {
+        const message = String(status.error);
+        const code = this.mapOrderErrorToCode(message);
+        throw new HyperliquidGatewayException(
+          `EXCHANGE_ERROR_${code.toUpperCase()}`,
+          `Hyperliquid execution error: ${message}`,
+          HttpStatus.BAD_GATEWAY,
+        );
+      }
+      // `resting` ou `filled`, la forme des ordres ordinaires.
+      return response;
     }
 
-    return response;
+    throw this.unexpectedPositionLevelAnswer(raw);
+  }
+
+  private unexpectedPositionLevelAnswer(raw: string) {
+    return new HyperliquidGatewayException(
+      'EXCHANGE_UNEXPECTED_RESPONSE',
+      `Unexpected Hyperliquid answer for a position-level order: ${raw}. The order may have been placed: read the open orders before anything else.`,
+      HttpStatus.BAD_GATEWAY,
+    );
   }
 
   /**

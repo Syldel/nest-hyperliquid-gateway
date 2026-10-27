@@ -59,14 +59,36 @@ d'un paramètre privé de `SmartOrderService.marketTriggerLimitPx` a été élar
   glisse sur le graphique.
 - Le SDK Python officiel passe `grouping` tel quel ; le SDK Rust officiel écrit `"na"` en dur.
 
+## Mesuré le 2026-10-27 (phase 1, pas 1 : création)
+
+- **Notre action signée est acceptée.** Un stop de position créé par `POST /orders/position-protective` (ETH, long de 0,011,
+  déclencheur 2310,5) est ouvert : `oid 587180894330`, `SELL`, `Stop Market`, `sz 0.0`, `reduceOnly true`,
+  `positionTpsl true` (lu dans les ordres ouverts). `s: "0"`, `positionTpsl`, `r: true` et un déclencheur au marché passent.
+- **La réponse n'a pas la forme d'un ordre ordinaire.** Le statut est la CHAÎNE `"waitingForTrigger"`, **sans oid**. Le premier
+  jet lisait `'error' in status` dessus : un `TypeError`, donc un **500 alors que l'ordre était posé** — le bot a lu
+  `UNKNOWN_ORDER_STATE`, à raison. Corrigé le jour même (`requireAcceptedOrder`, quatre tests qui tombent sur l'ancien code).
+  Les tests du premier jet utilisaient la forme ordinaire (`resting`) : une simulation qui n'avait pas été copiée d'une
+  mesure. L'enveloppe autour de la chaîne n'a pas été capturée entière (le gateway a levé avant de la journaliser) ; elle est
+  celle que le code lisait, `response.response.data.statuses[0]`.
+- **Conséquence pour l'adoption : l'oid d'un ordre de position ne se lit que dans les ordres ouverts**, jamais dans la réponse
+  de sa création. `modify` et `cancel` demandent un oid : retrouver le bon suppose de relire le carnet, et de savoir lequel
+  des ordres de position est le sien s'il y en a plusieurs.
+- **Dans `historicalOrders`, il est indiscernable d'un stop posé par l'interface** : `isPositionTpsl: true`, `sz 0.0 of 0.0`,
+  `Price below 2310.5`, `limit 2079.5` (la borne de 10 % du gateway, reprise telle quelle), `children 0`.
+- **Un take-profit ordinaire qui s'exécute n'a PAS emporté le stop de position** (pas 2). Un TP ordinaire (groupe `na`, taille
+  0,0050, au marché, `oid 587188535995`) a rempli 0,005 sur 0,011 en deux exécutions à 2319,0 ; la position est passée à
+  0,006 ; le stop `587180894330` est resté `open`, `sz 0.0`, `isPositionTpsl true`, **sans `siblingFilledCanceled`**. La
+  fratrie vue le 2026-10-26 reliait deux ordres créés ensemble par l'interface ; elle n'a pas été observée entre deux ordres
+  créés séparément. **Un seul stop, un seul take-profit, une seule mesure.**
+- Latent, non touché : `placeProtectiveOrder` lit toujours `'error' in status` sans garde. Il ne reçoit aujourd'hui que des
+  statuts-objets ; une chaîne (`waitingForFill` existe pour les enfants d'un `normalTpsl`) le ferait tomber de la même façon.
+
 ## ⚠️ Ce qui n'est pas mesuré
 
-- Que **notre** action signée soit acceptée par l'exchange. La première réponse à cette requête est la mesure : le script de
-  sonde du bot (`scripts/live-check/position-stop-api.ts`) existe pour la lire.
 - Ce que fait `modify` d'un ordre de position par l'API (l'interface le fait, par le graphique ; sa fenêtre, elle, annule puis
   recrée).
-- Ce qu'un take-profit **ordinaire** qui s'exécute fait d'un stop de position : l'emporte-t-il en fratrie ? C'est la
-  question qui décide de l'adoption dans le bot.
+- Ce que **plusieurs** take-profit ordinaires font d'un stop de position (un seul a été mesuré, un escalier en a
+  plusieurs), et ce qui se passe si un TP de position partage son groupe avec le stop.
 - Les chemins existants qui touchent des ordres du compte sans savoir qu'ils sont « de position » : `smart-order`
   (réalignement par `batchModify`) les traiterait comme les siens, avec une taille. Non observé, non modifié.
 

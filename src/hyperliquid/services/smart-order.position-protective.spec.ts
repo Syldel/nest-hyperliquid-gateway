@@ -133,6 +133,50 @@ describe('SmartOrderService — position-level protective orders', () => {
     );
   });
 
+  // MESURÉ le 2026-10-27, premier stop de position créé par ce gateway : le statut est cette chaîne, sans oid. Le premier jet
+  // lisait `'error' in status` dessus, levait un TypeError et renvoyait un 500 alors que l'ordre était posé. L'enveloppe
+  // autour de la chaîne n'a pas été capturée entière (le gateway a levé avant de la journaliser) : elle est celle que le
+  // code lisait, `response.response.data.statuses[0]`.
+  it('accepts the string status the exchange answers to a position-level order, which carries no oid', async () => {
+    const answer = accepted('waitingForTrigger');
+    placePositionLevelOrder.mockResolvedValue(answer);
+
+    await expect(service.placePositionProtectiveOrder(sellStop)).resolves.toBe(
+      answer,
+    );
+  });
+
+  it('refuses a string status it does not know, with the raw answer and the warning that the order may exist', async () => {
+    placePositionLevelOrder.mockResolvedValue(accepted('waitingForFill'));
+
+    const refusal = service.placePositionProtectiveOrder(sellStop);
+
+    await expect(refusal).rejects.toThrow('waitingForFill');
+    await expect(refusal).rejects.toThrow('may have been placed');
+  });
+
+  it('refuses an answer that is neither a status nor the exchange generic ack, with the raw answer', async () => {
+    placePositionLevelOrder.mockResolvedValue({
+      status: 'ok',
+      response: { type: 'surprise' },
+    });
+
+    await expect(
+      service.placePositionProtectiveOrder(sellStop),
+    ).rejects.toThrow('"type":"surprise"');
+  });
+
+  // Jamais vue pour une modification : c'est notre règle, pas une mesure. L'accusé générique de l'exchange est accepté
+  // parce qu'il dit `ok`, et le carnet relu ensuite (la sonde le fait) dit ce qui en est.
+  it('accepts the generic ack of the exchange for a modification', async () => {
+    const ack = { status: 'ok', response: { type: 'default' } };
+    modifyPositionLevelOrder.mockResolvedValue(ack);
+
+    await expect(
+      service.modifyPositionProtectiveOrder(1, sellStop),
+    ).resolves.toBe(ack);
+  });
+
   it('turns an exchange error into a gateway error that says what the exchange said', async () => {
     placePositionLevelOrder.mockResolvedValue(
       accepted({ error: 'Order has zero size.' }),
