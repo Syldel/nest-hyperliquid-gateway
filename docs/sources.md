@@ -167,13 +167,25 @@ réalignement des protections par `batchModify` (quatre réalignements, quatre `
 vers un déclencheur déjà franchi). Lue à la lettre, la doc aurait rejeté chacun de ces ordres.
 
 **Piste datée, relevée le 2026-10-27 : les deux drapeaux sont récents.** Ce n'est qu'une piste — la règle de ce document veut que
-seule une source de première partie conclue, et l'essentiel de ce qui suit vient d'un SDK communautaire :
+seule une source de première partie conclue, et ce qui suit vient d'un SDK communautaire et d'un miroir tiers de l'annonce :
 
-- **Le SDK nktkas/hyperliquid** (communautaire) a ajouté `a` à `modify`/`batchModify` (PR #145) et `f` à `cancel`/`cancelByCloid`
-  (PR #146), tous deux le **2026-06-17**, soit environ quatre mois avant cette lecture. Le corps du PR #145 écrit que Hyperliquid
-  a ajouté `always_place`, « announced in the HL API channel » (canal Telegram de l'API, messages 325 et 327 ;
-  `https://t.me/hyperliquid_api/327`). Un PR de test du 2026-06-19 (#157) fait passer `a: true` dans ses tests de `modify`
-  d'ordres à déclencheur ; son corps est vide, il n'explique rien.
+- **L'annonce du canal API** : message 327, du **2026-06-11**, qui date `a` six jours avant le SDK. Texte relevé sur un miroir
+  tiers (voir plus bas, « Ce que le canal d'annonces dit »).
+- **Le SDK nktkas/hyperliquid** (communautaire) a ajouté `a` à `modify`/`batchModify` (PR #145, le **2026-06-17**) et `f` à
+  `cancel`/`cancelByCloid` (PR #146, le **2026-06-17** aussi), soit environ quatre mois avant cette lecture. Les trois PR ont été
+  relus **en brut** le 2026-10-27 (`api.github.com` : JSON, diff et commentaires) :
+  - **#145** a pour auteur un contributeur (`roscoe-infinex`), pas le mainteneur, qui l'a fusionné après un seul commentaire,
+    « Thanks for your contribution! ». Son corps écrit que Hyperliquid a ajouté `always_place`, « announced in the HL API
+    channel » (messages 325 et 327 ; `https://t.me/hyperliquid_api/327`), et dit n'avoir pas pu lancer la partie réseau des
+    tests, qui demande une clé testnet financée. Sa phrase sur l'application future est donc une lecture de la doc, pas une
+    observation ;
+  - **#146** (le mainteneur) ne cite **aucune annonce**, seulement la documentation officielle. Côté SDK, la récence de `f` ne
+    repose que sur la date de ce PR ;
+  - **#157** (le mainteneur, **2026-06-19**) : son corps n'est que le modèle de PR, cases non cochées ; il n'explique rien. Son
+    titre dit « executable and trigger modifies », et son diff pose `a: true` dans les tests de `modify` **et** `batchModify`, pour
+    des ordres exécutables (Ioc, FrontendMarket, Gtc) **et** à déclencheur (TP, SL), en supprimant les échantillons dédiés ajoutés
+    par #145. Ces tests sont joués sur le testnet. Le motif n'est pas écrit : un alignement sur la doc, ou des tests qui
+    échouaient parce que le testnet applique la règle ? **Rien ne tranche.**
 - **Le SDK Python officiel** (première partie), `master` lu le 2026-10-27 : ses actions `batchModify`, `cancel` et
   `cancelByCloid` ne portent ni `a` ni `f`. Ce silence n'est pas une réponse (voir plus haut : il ne type pas tout, et il peut
   simplement être en retard).
@@ -184,25 +196,71 @@ seule une source de première partie conclue, et l'essentiel de ce qui suit vien
 **Lecture la plus plausible, non prouvée : la règle est annoncée mais pas encore appliquée.** L'auteur du PR #145 écrit que
 « Once HL enforces the new semantics », un `modify` visant un ordre à déclencheur (TP/SL) sera rejeté sans `a: true`. Cela
 s'accorde avec nos mesures — des `modify` d'ordres à déclencheur acceptés sans `a`, y compris le 2026-10-27 — sans rien forcer.
-La doc, elle, ne parle d'une « future mise à niveau du réseau » que pour l'effet de `f` sur le mempool ; pour `a` et pour le rejet
-des ordres à déclencheur par `f: true`, elle écrit au présent.
+**Mais l'annonce elle-même ne dit pas cela** : elle décrit une capacité et n'annonce ni rejet, ni date d'application, ni un mot
+sur les TP/SL. « Once HL enforces » est la déduction du contributeur, tirée de la doc. La doc, elle, ne parle d'une « future mise
+à niveau du réseau » que pour l'effet de `f` sur le mempool ; pour `a` et pour le rejet des ordres à déclencheur par `f: true`,
+elle écrit au présent.
 
 ⚠️ **Ce qui n'est pas établi :**
 
 - **La date d'application**, et si la règle l'est déjà dans un cas ou sur le testnet : rien ici ne la donne. L'annonce Telegram
-  n'a pas été lue ; la date du SDK la borne par le haut, elle ne la fixe pas. La doc, relue **en brut** (`curl`, sans outil qui
+  a été relevée en partie (messages 326, 327 et 329, sur un miroir tiers) : l'annonce du 2026-06-11 borne la date de `a` par le
+  haut, aucun message lu ne fixe la date d'application. Les messages 325, 328, 330 (environ 20 h avant le PR #157), 331 et tous
+  les suivants (le canal va au moins jusqu'au 350, le 2026-08-05) ne sont pas lus. La doc, relue **en brut** (`curl`, sans outil qui
   résume) le 2026-10-27, n'aide pas : la page de l'endpoint (120 880 octets, en entier), celle des erreurs et celle de la latence
   ne montrent ni date ni « last updated », et l'index `llms.txt` (159 lignes) ne liste aucune page de journal des changements,
   d'annonces ou de mises à niveau. Ces changements ne s'annoncent donc que sur le canal Telegram de l'API : à suivre par une
   personne, aucun test ne les verra.
-- **Que la règle vise ce que le PR en dit** : c'est la lecture d'un tiers, pas un énoncé de l'exchange. L'hypothèse d'un cas plus
-  étroit (le nouvel ordre posé quand l'annulation a échoué) n'est pas écartée.
-- **La lecture des PR** est passée par un outil de lecture qui résume : les citations rendues étaient littérales, mais le JSON
-  brut n'a pas été relu.
+- **Que la règle vise ce que le PR en dit** : c'est la lecture d'un tiers (un contributeur du SDK), ni un énoncé de l'exchange ni
+  celui de son annonce. L'hypothèse d'un cas plus étroit (le nouvel ordre posé quand l'annulation a échoué, ou un ordre modifié
+  **en** ordre exécutable ou à déclencheur, comme le dit l'annonce) n'est pas écartée.
+- **La lecture des PR** avait d'abord été faite par un outil qui résume ; refaite **en brut** le 2026-10-27, elle a confirmé les
+  citations et corrigé deux paraphrases de ce document (le corps et le périmètre du #157). Deux autres, dans
+  `nest-trading-bot/docs/known-gaps.md`, ont été corrigées de même. **Le SDK Python** : la façon dont il a été lu n'est pas
+  notée.
 - **Ce que la doc ne donne pas pour `modify`** (relue en brut le 2026-10-27) : la section `modify` a deux onglets de réponse,
   « Successful Response » et « Error Response », **vides** ; la section `batchModify` n'en a aucun. La forme d'une réponse de
   modification, et celle de son refus, ne sont donc écrites nulle part. La doc place en revanche `a` **au niveau de l'action**,
   après `order` (`modify`) ou `modifies` (`batchModify`) : un seul drapeau pour tout un lot.
+
+### Ce que le canal d'annonces dit (messages 326, 327 et 329, relevés le 2026-10-27)
+
+**Le statut de ce relevé : un miroir tiers.** Le canal Telegram `hyperliquid_api` (« Hyperliquid API Announcements », 2 878
+abonnés) n'expose pas ses textes sur le web : `t.me/hyperliquid_api/<n>?embed=1&mode=tme` rend le numéro, la minute et le nombre
+de vues, puis « Please open Telegram to view this post », et `t.me/s/hyperliquid_api` ne montre que la carte du canal. Les trois
+textes ont été **collés par l'utilisateur depuis Telemetr.io**, un agrégateur : la règle de ce document veut qu'on n'en tire que
+ce qu'une source de première partie recoupe. Sont recoupés : les numéros et les minutes (Telemetr affiche l'heure locale de
+l'utilisateur, UTC+2 en juin, soit l'heure de `t.me` plus deux heures, minute pour minute), et, pour deux points, la doc officielle
+lue en brut. Ne l'est pas : la formulation exacte.
+
+- **326** (2026-06-09, 11:36 UTC) : les fréquences d'envoi de plusieurs abonnements **WebSocket** changent « à la prochaine mise à
+  niveau » (`l2Book`, `allMids`, `spotAssetCtxs`, `allDexsAssetCtxs`, `webData2`), puis corrigées par le message 327. **Aucun
+  usage chez nous** : aucune occurrence de `WebSocket` ni de `wss://` dans `src/` du gateway, du bot et de l'application mobile
+  (relevé du 2026-10-27). `l2Book` et `allMids` n'apparaissent que dans le gateway, comme types de requête REST `info` (la table
+  des poids du garde de débit, et un appel `l2Book` dans `hyperliquid-api-public-info.service.ts`), jamais comme abonnement.
+  À relire le jour où l'un des trois passera au WebSocket.
+- **327** (2026-06-11, 10:48 UTC) : `modify` et `batchModify` « now support » un champ optionnel « always place », qui permet de
+  modifier un ordre **en** un ordre exécutable ou à déclencheur, pour des parcours « less common » où une modification doit
+  s'exécuter au lieu de rester au carnet. C'est **la date de `a`**, six jours avant le SDK. Le libellé est celui d'une
+  **capacité** : ni rejet, ni date d'application, ni TP/SL n'y figurent. Il s'accorde avec la page de l'endpoint (ce que
+  `a = false` interdit) ; il ne dit pas si la modification d'un ordre à déclencheur **vers** un ordre à déclencheur est comprise,
+  et la mesure du 2026-10-27 montre qu'elle est acceptée sans `a`, au moins sur le mainnet.
+- **329** (2026-06-17, 09:41 UTC — en plein dans la vie du PR #146, ouvert à 08:55 et fusionné à 10:12 UTC ; aucun lien établi) :
+  - les frais prioritaires de lecture et d'écriture sont dans le périmètre du bug bounty, avec un correctif sur l'obtention de la
+    priorité ALO par des ordres non ALO : sans objet pour nous, qui n'en utilisons pas ;
+  - **`f`** : « no disadvantage » à envoyer `f: true` ; la seule différence est que l'annulation **ne marche pas pour les ordres à
+    déclencheur**. Recoupé avec la doc brute (page de l'endpoint et page de latence). Le mot « clarification » suppose une annonce
+    antérieure de `f`, que nous n'avons pas ;
+  - **le minimum d'ordre** : à la prochaine mise à niveau, la formule devient prévisible, fondée sur le **prix limite** d'un ordre
+    au repos et sur le **prix de première exécution** d'un ordre exécutable, **au lieu du prix mark**.
+
+⚠️ **Le minimum d'ordre : une piste, non mesurée.** La date de la mise à niveau est inconnue (probablement passée au 2026-10-27,
+rien ne l'établit), et on ignore ce que « prix de première exécution » vaut pour un ordre à déclencheur qui se déclenche. Deux
+endroits encodent le minimum de 10 $ : `domain/order-minimum.ts` du bot (mesuré le 2026-10-20, voir
+`nest-trading-bot/docs/known-gaps.md`) et le contrôle local du gateway (`smart-order.service.ts`, `sz × price <= 10`, avec un
+TODO), calculé sur son propre prix. Le verdict de l'exchange fait autorité, pas ce contrôle : à mesurer avant de supposer qu'ils
+s'accordent. Les mesures du bot (fermeture complète exemptée, bande 10–11 $ remplie, reliquat de 1,2 $ rejeté) ne semblent pas
+distinguer l'ancienne base de la nouvelle : lecture, non éprouvée.
 
 **Ce que ça change pour le risque** — et il ne tient pas à l'adoption de l'ordre de position :
 
@@ -251,8 +309,8 @@ des ordres à déclencheur par `f: true`, elle écrit au présent.
   les trois dépôts, à coordonner par un tag — et de savoir où la clé se place dans l'action signée (la doc la montre au niveau de
   l'action, donc valable pour tout le lot ; mais la signature hache l'action sérialisée, l'ordre des clés peut compter : inféré,
   non vérifié dans notre code).
-- **`f: true` n'est pas utilisable pour annuler un stop ou un take-profit.** Si un chemin d'urgence veut un jour une annulation
-  prioritaire, elle ne vaudra pas pour les ordres à déclencheur.
+- **`f: true` n'est pas utilisable pour annuler un stop ou un take-profit** (la doc, la page de latence et le message 329 le
+  disent). Si un chemin d'urgence veut un jour une annulation prioritaire, elle ne vaudra pas pour les ordres à déclencheur.
 
 ⚠️ **Ce qui n'est toujours pas établi pour ce durcissement :**
 
@@ -322,6 +380,10 @@ théorique, elle a été mesurée ici :
 - **Une page lue en partie sans que ça se voie.** La page de l'endpoint (environ 120 000
   caractères) n'avait d'abord été lue que sur ses 100 000 premiers. Seul le fichier entier permet
   d'écrire qu'un mot n'y figure pas.
+- **Des citations exactes, des paraphrases fausses** (PR du SDK communautaire, relus en brut le
+  2026-10-27). Les deux phrases citées étaient littérales ; autour d'elles, un corps de PR « vide »
+  était le modèle de PR non rempli, des tests « d'ordres à déclencheur » couvraient aussi les ordres
+  exécutables et `batchModify`, et une annonce attribuée aux deux drapeaux ne l'était qu'à un seul.
 
 **Comment**
 
@@ -346,8 +408,9 @@ théorique, elle a été mesurée ici :
   paraphrase ne se met pas entre guillemets : le guillemet affirme un texte que la page n'a pas.
 - **Ce qui n'a été vu qu'à travers un résumé se marque**
   `⚠️ lu par un outil qui résume — à relire en brut`, **et ne fonde aucun comportement du code**
-  tant que ce n'est pas relu. Reste dans ce cas, à la date de cette règle, la lecture des PR du
-  SDK communautaire (section sur `modify`, plus haut) ; la façon dont a été lu le SDK Python
-  n'est pas notée.
+  tant que ce n'est pas relu. La lecture des PR du SDK communautaire, d'abord faite par un
+  résumé, a été refaite en brut le 2026-10-27 (section sur `modify`, plus haut). Restent dans ce
+  cas la façon dont a été lu le SDK Python, qui n'est pas notée, et les textes des messages du
+  canal d'annonces, relevés sur un miroir tiers.
 - **Dire aussi ce que la page ne dit pas, avec sa portée** : « ne parle que des ordres et des
   annulations » n'est pas « ne parle pas des modifications ».
