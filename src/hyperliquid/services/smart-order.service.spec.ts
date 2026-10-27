@@ -19,6 +19,7 @@ import { PriceMathService } from './price-math.service';
 import { AssetRegistryService } from './asset-registry.service';
 import { ValueFormatterService } from './value-formatter.service';
 import { HyperliquidCollateralService } from './hyperliquid-collateral.service';
+import { HyperliquidGatewayException } from '../exceptions/hyperliquid-gateway.exception';
 
 describe('SmartOrderService', () => {
   let service: SmartOrderService;
@@ -532,7 +533,8 @@ describe('SmartOrderService', () => {
 
     beforeEach(() => {
       getFrontendOpenOrdersSpy.mockResolvedValue([]);
-      batchModifyOrdersSpy.mockResolvedValue({});
+      // Pas de réponse par défaut : `{}` n'est pas ce que l'exchange rend, et le gateway la traite en refus. Un test qui
+      // modifie dit ce que l'exchange répond.
       cancelOrderSpy.mockResolvedValue({
         status: 'ok',
         response: {
@@ -599,6 +601,14 @@ describe('SmartOrderService', () => {
         makeOrderFromSpec('101_0.5_9000_tp', assetName),
         makeOrderFromSpec('102_0.3_8000_sl', assetName),
       ]);
+      batchModifyOrdersSpy.mockResolvedValue({
+        status: 'ok',
+        response: {
+          data: {
+            statuses: [{ resting: { oid: 1101 } }, { resting: { oid: 1102 } }],
+          },
+        },
+      });
 
       const params = {
         assetName,
@@ -971,6 +981,219 @@ describe('SmartOrderService', () => {
       expect(result.sl.updated).toEqual([1888]); // SL 101 => SL 1888
       expect(result.sl.created).toEqual([201]);
       expect(result.sl.cancelled).toHaveLength(0);
+    });
+
+    /**
+     * Ce que le réalignement fait d'un `batchModify` que l'exchange ne reconnaît pas comme accepté.
+     *
+     * Avant, `if (response.status === 'ok')` sautait tout le bloc sans un mot, puis les annulations et les créations du même
+     * passage partaient : un plan qui mêle une modification et une création rendait un compte rendu NON vide alors que la
+     * modification n'avait pas eu lieu, et le bot lisait `protected`.
+     *
+     * Ce qui compte ici est l'ORDRE : ce qui protège part d'abord, l'échec vient après. Lever dès le refus laisserait sans
+     * stop une position dont le stop manque et dont un TP périmé est refusé (mesuré dans une copie jetable le 2026-10-27 :
+     * l'ancien code posait le stop, une version qui lève d'emblée ne le posait pas). Le refus est donc consigné au journal tout
+     * de suite, le plan se termine, puis le gateway lève en disant ce qui a été envoyé.
+     *
+     * ⚠️ Le TEXTE d'un refus de `modify` par l'exchange n'est pas connu (non mesuré) : les doubles n'en inventent qu'un libellé
+     * neutre, que le code ne lit pas. Seule l'enveloppe `{ status: 'err', response: <texte> }` est connue, c'est celle que
+     * `executeWithNonce` teste déjà (avec un texte mesuré, pour la limite par adresse).
+     */
+    describe('a batchModify the exchange does not accept', () => {
+      // Une cible périmée de deux ordres, plus un TP à créer : deux modifications et une création dans le même plan.
+      const desired = {
+        assetName,
+        isBuy,
+        tp: [
+          { price: '9100', sz: '0.6' }, // modifie le TP 101
+          { price: '9200', sz: '0.2' }, // à créer
+        ],
+        sl: [{ price: '8100', sz: '0.35' }], // modifie le SL 102
+      };
+
+      const refusedText = '<placeholder, not a measured message>';
+      const refusal = { status: 'err', response: refusedText };
+
+      let logError: jest.SpyInstance;
+
+      beforeEach(() => {
+        logError = jest
+          .spyOn(Logger.prototype, 'error')
+          .mockImplementation(() => undefined);
+        getFrontendOpenOrdersSpy.mockResolvedValue([
+          makeOrderFromSpec('101_0.5_9000_tp', assetName),
+          makeOrderFromSpec('102_0.3_8000_sl', assetName),
+        ]);
+        getAssetId.mockReturnValue(7);
+        placeOrderSpy.mockResolvedValue({
+          response: { data: { statuses: [{ resting: { oid: 201 } }] } },
+        });
+      });
+
+      afterEach(() => logError.mockRestore());
+
+      const failureOf = async (run: Promise<unknown>) => {
+        const error = await run.then(
+          () => undefined,
+          (e: unknown) => e,
+        );
+        expect(error).toBeInstanceOf(HyperliquidGatewayException);
+        return error as HyperliquidGatewayException;
+      };
+
+      it.each([
+        ['an err envelope', refusal],
+        ['an empty object', {}],
+        ['a null body', null],
+        ['no body at all', undefined],
+      ])(
+        'ends with a clear refusal (422) on %s, not with an unknown state',
+        async (_label, answer) => {
+          batchModifyOrdersSpy.mockResolvedValue(answer);
+
+          const error = await failureOf(
+            service.placeBatchProtectiveOrders(desired, false),
+          );
+
+          // 422 et non 502 : le bot lit une 5xx d'écriture comme « sort inconnu » et abandonne le passage de TOUTES les
+          // paires (`mustAbortPass`) ; un refus connu appartient à sa paire.
+          expect(error.getStatus()).toBe(422);
+          expect(error.getResponse()).toMatchObject({
+            error: 'EXCHANGE_BATCH_MODIFY_REFUSED',
+          });
+        },
+      );
+
+      // C'est le cas qui a fait écarter « lever dès le refus » : sans lui, la position reste sans stop.
+      it('still places the missing stop when the modification of a stale take-profit is refused', async () => {
+        getFrontendOpenOrdersSpy.mockResolvedValue([
+          makeOrderFromSpec('101_0.5_9000_tp', assetName),
+        ]);
+        batchModifyOrdersSpy.mockResolvedValue(refusal);
+
+        await expect(
+          service.placeBatchProtectiveOrders(
+            {
+              assetName,
+              isBuy,
+              tp: [{ price: '9100', sz: '0.6' }], // modifie le TP 101
+              sl: [{ price: '8100', sz: '0.35' }], // le stop MANQUE : à créer
+            },
+            false,
+          ),
+        ).rejects.toThrow('"sl":{"cancelled":[],"created":[201]');
+
+        expect(placeOrderSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            order: expect.objectContaining({
+              orderType: {
+                trigger: expect.objectContaining({
+                  tpsl: 'sl',
+                  triggerPx: '8100',
+                }) as unknown,
+              },
+            }) as unknown,
+          }),
+        );
+      });
+
+      it('carries on with the cancels and creations of the same plan, then fails saying what was sent', async () => {
+        getFrontendOpenOrdersSpy.mockResolvedValue([
+          makeOrderFromSpec('101_0.5_9000_tp', assetName),
+          makeOrderFromSpec('102_0.3_8000_sl', assetName),
+          makeOrderFromSpec('104_0.4_9500_tp', assetName),
+        ]);
+        batchModifyOrdersSpy.mockResolvedValue(refusal);
+
+        const failure = service.placeBatchProtectiveOrders(
+          {
+            assetName,
+            isBuy,
+            tp: [{ price: '9100', sz: '0.6' }], // modifie le TP 101 ; le TP 104 est de trop
+            sl: [
+              { price: '7900', sz: '0.25' }, // modifie le SL 102
+              { price: '7600', sz: '0.35' }, // à créer
+            ],
+          },
+          false,
+        );
+
+        await expect(failure).rejects.toThrow('WERE sent');
+        await expect(failure).rejects.toThrow('"cancelled":[104]');
+        await expect(failure).rejects.toThrow('"created":[201]');
+        expect(cancelOrderSpy).toHaveBeenCalledWith(
+          expect.arrayContaining([{ oid: 104, asset: 7 }]),
+          false,
+        );
+        expect(placeOrderSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it('names in the message what was refused, with the raw answer', async () => {
+        batchModifyOrdersSpy.mockResolvedValue(refusal);
+
+        const failure = service.placeBatchProtectiveOrders(desired, false);
+
+        await expect(failure).rejects.toThrow('2 protective order(s)');
+        await expect(failure).rejects.toThrow(`"response":"${refusedText}"`);
+      });
+
+      it('logs the raw answer as an error before anything else of the plan is written', async () => {
+        batchModifyOrdersSpy.mockResolvedValue(refusal);
+
+        await expect(
+          service.placeBatchProtectiveOrders(desired, false),
+        ).rejects.toThrow();
+
+        expect(logError).toHaveBeenCalledWith(
+          expect.stringContaining(`"response":"${refusedText}"`),
+        );
+        expect(logError.mock.invocationCallOrder[0]).toBeLessThan(
+          placeOrderSpy.mock.invocationCallOrder[0],
+        );
+      });
+
+      it('keeps the refusal in the journal when a later write of the same plan throws', async () => {
+        batchModifyOrdersSpy.mockResolvedValue(refusal);
+        placeOrderSpy.mockRejectedValue(new Error('network down'));
+
+        await expect(
+          service.placeBatchProtectiveOrders(desired, false),
+        ).rejects.toThrow('network down');
+
+        expect(logError).toHaveBeenCalledWith(
+          expect.stringContaining(`"response":"${refusedText}"`),
+        );
+      });
+
+      // Ce que la doc invoque comme « le repli existe » n'avait aucun test : on le fige, car le traitement d'un lot refusé en
+      // entier ne doit pas le toucher (un refus PAR ORDRE reste un repli par annulation + recréation, pas une exception).
+      it('still falls back to cancel and recreate when the exchange refuses one order of the batch', async () => {
+        batchModifyOrdersSpy.mockResolvedValue({
+          status: 'ok',
+          response: {
+            data: {
+              statuses: [
+                { error: refusedText }, // le TP 101
+                { resting: { oid: 1222 } }, // le SL 102
+              ],
+            },
+          },
+        });
+
+        const result = await service.placeBatchProtectiveOrders(desired, false);
+
+        expect(cancelOrderSpy).toHaveBeenCalledWith(
+          [{ oid: 101, asset: 7 }],
+          false,
+        );
+        // le TP 9200 prévu, et le TP 9100 que la modification n'a pas pu faire
+        expect(placeOrderSpy).toHaveBeenCalledTimes(2);
+        expect(result.tp.cancelled).toEqual([101]);
+        expect(result.sl.updated).toEqual([1222]);
+        expect(logError).toHaveBeenCalledWith(
+          expect.stringContaining('Failed to modify order 101'),
+        );
+      });
     });
   });
 

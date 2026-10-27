@@ -1125,13 +1125,17 @@ export class SmartOrderService {
       );
     }
 
+    // La réponse brute d'un lot de modifications que l'exchange ne reconnaît pas comme accepté (voir plus bas, avant le
+    // `return`) : consignée au journal dès qu'elle arrive, levée seulement après annulations et créations.
+    let refusedModify: string | undefined;
+
     if (modifies.length > 0) {
       const bathModifyRes = await this.tradeService.batchModifyOrders(
         modifies,
         isTestnet,
       );
 
-      if (bathModifyRes.status === 'ok') {
+      if (bathModifyRes?.status === 'ok') {
         const bmStatus = bathModifyRes.response.data.statuses;
 
         modifies.forEach((m, index) => {
@@ -1182,6 +1186,16 @@ export class SmartOrderService {
             }
           }
         });
+      } else {
+        // Toute réponse qui n'est pas un « ok » (l'enveloppe `{ status: 'err', response }`, un objet vide, rien) : avant,
+        // ce bloc sautait en silence. Ici on consigne, et on NE lève PAS encore : ce qui protège doit partir d'abord.
+        // `JSON.stringify(undefined)` rend `undefined`, pas une chaîne : sans le repli, une absence de réponse passerait pour
+        // « pas de refus ».
+        const rawAnswer: string | undefined = JSON.stringify(bathModifyRes);
+        refusedModify = rawAnswer ?? 'no answer';
+        this.logger.error(
+          `batchModify of ${modifies.length} protective order(s) refused as a whole: ${refusedModify}`,
+        );
       }
     }
 
@@ -1260,6 +1274,25 @@ export class SmartOrderService {
       } else {
         this.logger.error(`Order creation failed: ${JSON.stringify(oStatus)}`);
       }
+    }
+
+    // Levé ICI et non au moment du refus : lever d'emblée laisserait sans stop une position dont le stop manque et dont un
+    // TP périmé est refusé (mesuré dans une copie jetable, 2026-10-27 : l'ancien code posait le stop, une version qui lève
+    // d'emblée ne le posait pas). 422 et non 502 : le bot lit une 5xx d'écriture comme `UNKNOWN_ORDER_STATE` et abandonne le
+    // passage de TOUTES les paires (`nest-trading-bot`, `gateway-errors.ts`) ; un refus connu appartient à sa paire.
+    //
+    // ⚠️ « Les modifications ne sont pas rapportées comme appliquées » est ce que `err` veut dire d'après le format, NON
+    // mesuré pour un `batchModify` : le texte d'un refus de `modify` sur un déclencheur n'est pas connu. D'où la demande de
+    // relire le carnet. Pas de repli par annulation + recréation pour un lot refusé en entier : sa cause est inconnue, et ce
+    // repli ouvre une fenêtre sans protection (voir `docs/sources.md`).
+    if (refusedModify !== undefined) {
+      throw new HyperliquidGatewayException(
+        'EXCHANGE_BATCH_MODIFY_REFUSED',
+        `Hyperliquid refused the batchModify of ${modifies.length} protective order(s) as a whole: ${refusedModify}. ` +
+          `The modifications are not reported as applied; the cancels and creations of the same plan WERE sent, accepted: ${JSON.stringify(result)}. ` +
+          `Read the open orders before anything else.`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
     }
 
     return result;
