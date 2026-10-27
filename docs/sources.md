@@ -213,10 +213,11 @@ PR #157 (2026-06-19) ont eu besoin de `a`. Elle n'expliquerait pas ses tests à 
 ⚠️ **Ce qui n'est pas établi :**
 
 - **La date d'application**, et si la règle l'est déjà dans un cas ou sur le testnet : rien ici ne la donne. Le canal Telegram a
-  été relevé du message 306 (2026-04-04) au 364 (2026-08-29), sur un miroir tiers, le 2026-10-27 : les annonces du 2026-06-08
-  (325) et du 2026-06-11 (327) bornent la date de `a` par le haut, et aucun autre de ces 59 messages ne parle de `modify`.
-  Aucun ne fixe la date d'application de la règle sur les déclencheurs. **Non lus : les messages 365 à 384** (le canal va
-  jusqu'au 384, le 2026-10-26, vérifié sur `t.me`), soit les deux derniers mois, et tout ce qui précède le 306. La doc, relue **en brut** (`curl`, sans outil qui
+  été relevé du message 306 (2026-04-04) au 384 (2026-10-26, le dernier à la date du relevé), sur un miroir tiers, le
+  2026-10-27 : les annonces du 2026-06-08 (325) et du 2026-06-11 (327) bornent la date de `a` par le haut, et aucun autre de
+  ces 79 messages ne parle de la sémantique de `modify` (le 382 cite `modify` et `batchModify` seulement dans une liste
+  d'actions de priorité). Aucun ne fixe la date d'application de la règle sur les déclencheurs. **Non lus : tout ce qui précède
+  le 306, et tout message postérieur au 384.** La doc, relue **en brut** (`curl`, sans outil qui
   résume) le 2026-10-27, n'aide pas : la page de l'endpoint (120 880 octets, en entier), celle des erreurs et celle de la latence
   ne montrent ni date ni « last updated », et l'index `llms.txt` (159 lignes) ne liste aucune page de journal des changements,
   d'annonces ou de mises à niveau. Ces changements ne s'annoncent donc que sur le canal Telegram de l'API : à suivre par une
@@ -233,21 +234,21 @@ PR #157 (2026-06-19) ont eu besoin de `a`. Elle n'expliquerait pas ses tests à 
   modification, et celle de son refus, ne sont donc écrites nulle part. La doc place en revanche `a` **au niveau de l'action**,
   après `order` (`modify`) ou `modifies` (`batchModify`) : un seul drapeau pour tout un lot.
 
-### Ce que le canal d'annonces dit (messages 306 à 364 relevés le 2026-10-27, ceux qui nous concernent ci-dessous)
+### Ce que le canal d'annonces dit (messages 306 à 384 relevés le 2026-10-27, ceux qui nous concernent ci-dessous)
 
 **Le statut de ce relevé : un miroir tiers.** Le canal Telegram `hyperliquid_api` (« Hyperliquid API Announcements », 2 878
 abonnés) n'expose pas ses textes sur le web : `t.me/hyperliquid_api/<n>?embed=1&mode=tme` rend le numéro, la minute et le nombre
 de vues, puis « Please open Telegram to view this post », et `t.me/s/hyperliquid_api` ne montre que la carte du canal. Les textes
-ont été relevés sur **la page d'archive de Telemetr.io, collée en HTML par l'utilisateur le 2026-10-27** (59 messages, numéros 306
-à 364) : un agrégateur, protégé par Cloudflare, que l'agent ne lit pas lui-même (403, puis un contrôle humain qu'il ne contourne
-pas). La règle de ce document veut qu'on n'en tire que ce qu'une source de première partie recoupe. Sont recoupés : les numéros
-et les minutes. Ne l'est pas : la formulation exacte.
+ont été relevés sur **la page d'archive de Telemetr.io, collée en HTML par l'utilisateur le 2026-10-27, en deux fois** (79
+messages, numéros 306 à 384, sans trou) : un agrégateur, protégé par Cloudflare, que l'agent ne lit pas lui-même (403, puis un
+contrôle humain qu'il ne contourne pas). La règle de ce document veut qu'on n'en tire que ce qu'une source de première partie
+recoupe. Sont recoupés : les numéros et les minutes. Ne l'est pas : la formulation exacte.
 
-**D'où viennent les numéros** : pour le 345 au 364, des données structurées de la page (numéro et heure UTC exacte) ; pour les
+**D'où viennent les numéros** : pour le 345 au 384, des données structurées de la page (numéro et heure UTC exacte) ; pour les
 plus anciens, un décompte à rebours depuis le 364 (la page n'affiche que l'heure locale de l'utilisateur, UTC+2 en été, soit
 l'heure de `t.me` plus deux heures). Ce décompte tombe à la minute près sur treize repères relevés sur `t.me` (324 à 331, 335,
-340, 345, 350 et 364). **Les numéros 306 à 323 sont comptés sans repère.** Un numéro qui ne repose pas sur un de ces moyens ne
-se cite pas.
+340, 345, 350 et 364), et les données structurées tombent à la seconde près sur six autres (366 et 380 à 384). **Les numéros
+306 à 323 sont comptés sans repère.** Un numéro qui ne repose pas sur un de ces moyens ne se cite pas.
 
 - **325** (2026-06-08, 15:38 UTC) : « à la prochaine mise à niveau », un `modify` ne prendra plus en charge le passage en
   **exécution immédiate** : si la TIF du nouvel ordre ne repose pas au carnet (l'exemple donné est IOC), le `modify` est
@@ -300,6 +301,31 @@ se cite pas.
 - **359** (2026-08-25) : les ordres trailing stop sont actifs sur le testnet. **363** (2026-08-28) : les déploiements HIP-4 sans
   permission (marchés outcome) seront activés à la prochaine mise à niveau. Rien à changer ici ; à relire face au refus des
   marchés outcome par leur nom côté bot.
+- **366** (2026-09-04, 15:37 UTC) : à la prochaine mise à niveau, le minimum d'ordre des **ordres outcome** passe de 10 $ à
+  1 $. Le plancher de 10 $ n'est donc pas le même sur tous les marchés. Nos mesures du 2026-10-20 sont celles d'ETH ; le bot
+  refuse les marchés outcome, ce changement ne l'atteint pas tant que ce refus tient.
+- **380** (2026-10-18, 00:59 UTC), **382** (2026-10-24, 16:35 UTC) et **384** (2026-10-26, 06:56 UTC) : les frais de priorité
+  d'écriture. Le 380 dit que ces changements, déjà sur le testnet, « only affect latency-sensitive users » (le terme n'est pas
+  défini). Il pose quatre règles : la priorité en mempool ne vaut que pour un compte en abstraction **Standard** (les utilisateurs
+  sensibles à la latence ne devraient pas utiliser Unified Account ni Portfolio Margin) ; une action autre qu'annulation, ordre
+  ou modification déprioritise toutes les actions tant qu'elle n'est pas validée, y compris entre les sous-comptes et les vaults
+  d'un même compte maître ; un compte qui a un jour envoyé directement une action CoreWriter est déprioritisé ; les frais de
+  priorité IOC et ALO exigent 10 HYPE délégables. Le 382 précise que `noop` et `scheduledCancel` n'entrent pas dans ces actions,
+  et ajoute `cDeposit2` (comme `cDeposit`, signable par un agent). Le 384 annonce, à la prochaine mise à niveau, des emplacements
+  de priorité gossip portés de 2 à 3 et l'activation de ces règles. **Elles ne sont pas actives au 2026-10-26** : la dernière
+  mise à niveau annoncée avant le 384 est celle du 2026-10-25 (383), et aucune suivante n'est annoncée dans les messages lus.
+  ⚠️ Que nous ne soyons pas concernés est une lecture (aucun usage de frais de priorité chez nous, voir le 330, et un terme non
+  défini), pas un énoncé de l'annonce. Le mode d'abstraction du compte réellement utilisé n'a pas été lu (voir le 335) : les
+  messages 312, 335 et 380 vont tous dans le sens de l'abstraction Standard pour un trader automatique.
+- **381** (2026-10-23, 03:09 UTC) : à la prochaine mise à niveau, le volume des marchés HIP-3 compte pour les limites de débit L1
+  selon les frais totaux et non plus la seule part du protocole (le plus souvent le double). Présenté comme non cassant, sans
+  effet sur les paliers de frais. Sans effet connu chez nous, sauf à trader des marchés HIP-3.
+- **Sans effet connu chez nous**, relevés pour mémoire : 369 (emprunt manuel en production), 370 (plafonds de funding
+  configurables par les déployeurs HIP-3), 375 (plafond du funding de 4 % à 0,5 % par heure, le funding restant hors du
+  backtest), 376 (sous-comptes de 50 à 80), 378 (mise à jour de `hl-visor` pour les opérateurs de nœud), 365, 371 et 373
+  (`HIP-3*` : marchés permissionnés avec liste blanche, drapeaux reduce-only par utilisateur fixés par les déployeurs, testnet
+  seulement). À relire le jour où le bot tradera un marché HIP-3. Les avis de mise à niveau de cette période sont les 367 (puis
+  le 368, qui la décale d'environ 30 minutes), 372, 374, 377, 379 et 383.
 
 ⚠️ **Le minimum d'ordre : une piste, non mesurée.** La mise à niveau qui suit le 329 est, sauf report, celle que le 331 annonce
 pour le 2026-06-20 à 9:00 UTC (le 347 montre qu'un horaire peut être déplacé) : le changement de base daterait donc d'environ
@@ -460,7 +486,7 @@ théorique, elle a été mesurée ici :
   tant que ce n'est pas relu. La lecture des PR du SDK communautaire, d'abord faite par un
   résumé, a été refaite en brut le 2026-10-27 (section sur `modify`, plus haut). Restent dans ce
   cas la façon dont a été lu le SDK Python, qui n'est pas notée, et les textes des messages du
-  canal d'annonces, relevés sur un miroir tiers (page Telemetr.io collée le 2026-10-27, messages 306 à 364 ; les 365 à 384 ne
-  sont pas lus).
+  canal d'annonces, relevés sur un miroir tiers (pages Telemetr.io collées le 2026-10-27, messages 306 à 384 ; les 305 et
+  précédents ne sont pas lus).
 - **Dire aussi ce que la page ne dit pas, avec sa portée** : « ne parle que des ordres et des
   annulations » n'est pas « ne parle pas des modifications ».
