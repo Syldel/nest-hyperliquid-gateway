@@ -69,11 +69,21 @@ relancer un 429** (voir la première règle).
   officiels** peuvent établir chacun, et pourquoi aucun ne remplace les autres. Les types de
   `@syldel/hl-shared-types` sont des affirmations sur l'API ; une affirmation fausse ne se
   voit pas, elle se paie plus tard.
+- **Un TP/SL « de position »** (sans taille, au marché, groupe `positionTpsl`) a sa **propre
+  famille de routes**, `/orders/position-protective` : aucune route existante ne l'accepte, et
+  `formatSize` refuse toujours un zéro. Voir [docs/position-level-orders.md](docs/position-level-orders.md),
+  y compris ce qui n'en est pas mesuré.
 - **Ne jamais committer, tagger ou pousser sans demande explicite** : proposer un message
   de commit conventionnel, en anglais, et laisser l'utilisateur l'exécuter — comme dans les
   autres dépôts.
 - **Le mode watch redémarre le gateway à chaque sauvegarde**, et chaque démarrage coûte
   ~260 de poids sur 1200 par minute. Grouper les modifications en une seule écriture.
+  **Cela vaut pour tout ce qui écrit dans `src/`** : un test de mutation (écrire un fichier
+  muté, le restaurer, vingt fois), un `prettier --write` global, des éditions en série. Le
+  garde de débit est en mémoire et repart de zéro à chaque redémarrage : il ne voit pas
+  cette salve. Avant d'écrire en boucle, **faire arrêter le watch** (ou travailler dans une
+  copie hors du dossier surveillé). Le 2026-10-27, une boucle de 24 écritures a recompilé
+  `dist/` — preuve d'un watch actif — sans qu'on sache combien de redémarrages en ont suivi.
 - **Fins de ligne : LF partout**, imposé par `.gitattributes` (`* text=auto eol=lf`) et
   non par la configuration de la machine, comme dans `nest-trading-bot` et
   `trading-shared-types`. Prettier écrit en LF (`endOfLine`, explicite dans

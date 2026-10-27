@@ -8,6 +8,7 @@ import { HyperliquidOrdersController } from './controllers/hyperliquid-orders.co
 import { HyperliquidFillsController } from './controllers/hyperliquid-fills.controller';
 import { InstantOrderController } from './controllers/instant-order.controller';
 import { ProtectiveOrdersController } from './controllers/protective-order.controller';
+import { PositionProtectiveOrdersController } from './controllers/position-protective-order.controller';
 import { HyperliquidConfigService } from './config/hyperliquid-config.service';
 import { HyperliquidApiTradeService } from './services/hyperliquid-api-trade.service';
 import { HyperliquidApiPrivateInfoService } from './services/hyperliquid-api-private-info.service';
@@ -30,6 +31,7 @@ import { HyperliquidCollateralService } from './services/hyperliquid-collateral.
     HyperliquidFillsController,
     InstantOrderController,
     ProtectiveOrdersController,
+    PositionProtectiveOrdersController,
   ],
   providers: [
     HyperliquidRateGuardService,

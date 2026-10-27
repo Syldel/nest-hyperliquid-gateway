@@ -36,6 +36,16 @@ import { AssetRegistryService } from './asset-registry.service';
 import { ValueFormatterService } from './value-formatter.service';
 import { HyperliquidGatewayException } from '../exceptions/hyperliquid-gateway.exception';
 import { HyperliquidCollateralService } from './hyperliquid-collateral.service';
+import { PositionLevelOrder } from '../utils/position-level-order';
+
+/**
+ * Un TP/SL « de position » ne porte ni taille ni choix de forme : de quoi dire où et dans quel sens. Voir
+ * `docs/position-level-orders.md`.
+ */
+type PositionProtectiveParams = Pick<
+  ProtectiveOrderParams,
+  'assetName' | 'kind' | 'isBuy' | 'price'
+>;
 
 /**
  * Le prix limite `p` d'un ordre protecteur AU MARCHÉ : la borne que l'exchange recalculera lui-même.
@@ -567,6 +577,91 @@ export class SmartOrderService {
     return response;
   }
 
+  /* ************************************************************* */
+
+  /**
+   * Un TP/SL « de position » : sans taille, un déclencheur AU MARCHÉ, reduce-only, dans le groupe `positionTpsl` (voir
+   * `utils/position-level-order.ts` et `docs/position-level-orders.md`). Il n'a de commun avec `placeProtectiveOrder`
+   * que la lecture du statut : cette famille n'a pas de `sz` à formater, donc pas de zéro à tolérer.
+   *
+   * `params.isBuy` est le côté de l'ORDRE, donc de la clôture, comme pour `toHLOrderDetails`.
+   */
+  async placePositionProtectiveOrder(
+    params: PositionProtectiveParams,
+    isTestnet = false,
+  ) {
+    this.logger.log(
+      `Place position-level ${params.kind}: ${JSON.stringify(params)}`,
+    );
+
+    const response = await this.tradeService.placePositionLevelOrder({
+      order: this.toPositionLevelOrder(params),
+      isTestnet,
+    });
+
+    return this.requireAcceptedOrder(response);
+  }
+
+  /** Modifie un ordre de position existant. ⚠️ Ce que l'exchange en fait n'est pas mesuré. */
+  async modifyPositionProtectiveOrder(
+    oid: HLOid,
+    params: PositionProtectiveParams,
+    isTestnet = false,
+  ) {
+    this.logger.log(
+      `Modify position-level ${params.kind} ${oid}: ${JSON.stringify(params)}`,
+    );
+
+    const response = await this.tradeService.modifyPositionLevelOrder(
+      oid,
+      this.toPositionLevelOrder(params),
+      isTestnet,
+    );
+
+    return this.requireAcceptedOrder(response);
+  }
+
+  private toPositionLevelOrder(
+    params: PositionProtectiveParams,
+  ): PositionLevelOrder {
+    return {
+      assetName: params.assetName,
+      isBuy: params.isBuy,
+      limitPx: this.marketTriggerLimitPx(params),
+      triggerPx: params.price,
+      tpsl: params.kind,
+    };
+  }
+
+  /** Le statut d'un ordre accepté, ou une erreur : la même lecture que `placeProtectiveOrder`. */
+  private requireAcceptedOrder(
+    response: Awaited<
+      ReturnType<HyperliquidApiTradeService['placePositionLevelOrder']>
+    >,
+  ) {
+    const statuses = response.response.data.statuses;
+    if (!statuses || statuses.length === 0) {
+      throw new HyperliquidGatewayException(
+        'EXCHANGE_EMPTY_RESPONSE',
+        'No order status returned from Hyperliquid API',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+
+    const status = statuses[0];
+
+    if ('error' in status) {
+      const code = this.mapOrderErrorToCode(status.error);
+      throw new HyperliquidGatewayException(
+        `EXCHANGE_ERROR_${code.toUpperCase()}`,
+        `Hyperliquid execution error: ${status.error}`,
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+
+    return response;
+  }
+
   /**
    * Transforme les paramètres d'un ProtectiveOrder en HLOrderDetails
    * pour Hyperliquid.
@@ -622,7 +717,9 @@ export class SmartOrderService {
    * **échoue** : se rabattre sur des décimales par défaut ferait poser un prix que l'exchange
    * refuse ou tronque, sur un ordre dont la seule fonction est de protéger.
    */
-  private marketTriggerLimitPx(params: ProtectiveOrderParams): string {
+  private marketTriggerLimitPx(
+    params: Pick<ProtectiveOrderParams, 'assetName' | 'isBuy' | 'price'>,
+  ): string {
     const szDecimals = this.requireSzDecimals(params.assetName);
 
     const factor = params.isBuy

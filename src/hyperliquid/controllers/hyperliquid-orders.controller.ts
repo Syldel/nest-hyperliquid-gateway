@@ -3,6 +3,7 @@ import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import {
   HLOpenOrdersResponse,
   HLFrontendOpenOrdersResponse,
+  HLOrderStatusData,
 } from '@syldel/hl-shared-types';
 import {
   GetOpenOrdersQueryDto,
@@ -37,6 +38,19 @@ export class HyperliquidOrdersController {
     @Query() query: GetOpenOrdersQueryDto,
   ): Promise<HLFrontendOpenOrdersResponse> {
     return this.infoService.getFrontendOpenOrders(query.dex, query.isTestnet);
+  }
+
+  /**
+   * GET /historical
+   * L'historique d'ordres du compte : 2 000 enregistrements au plus, un par état traversé (voir
+   * `getHistoricalOrders`). Poids 20 + 1 par 20 enregistrements, compté par le garde de débit.
+   */
+  @Get('historical')
+  @UseGuards(UserAuthGuard)
+  async getHistoricalOrders(
+    @Query() query: OrderStatusQueryDto,
+  ): Promise<HLOrderStatusData[]> {
+    return this.infoService.getHistoricalOrders(query.isTestnet);
   }
 
   /**

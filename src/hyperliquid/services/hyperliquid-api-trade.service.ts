@@ -42,6 +42,11 @@ import {
   isAddressRateLimitMessage,
   parseRetryAfterMs,
 } from './hyperliquid-rate-guard.service';
+import {
+  POSITION_LEVEL_GROUPING,
+  POSITION_LEVEL_WIRE_SIZE,
+  PositionLevelOrder,
+} from '../utils/position-level-order';
 
 @Injectable()
 export class HyperliquidApiTradeService {
@@ -374,6 +379,91 @@ export class HyperliquidApiTradeService {
       HLBatchModifyAction,
       HLSuccessResponse<HLPlaceOrderResponse>
     >('exchange', action, isTestnet);
+  }
+
+  // =============================================
+  // Ordres « de position » (voir utils/position-level-order.ts)
+  // =============================================
+
+  /**
+   * Place un TP/SL « de position » : sans taille, au marché, dans le groupe `positionTpsl`.
+   *
+   * Une méthode À PART, qui ne passe pas par `convertToApiOrder` : celle-ci refuse un zéro, à raison, et un ordre
+   * ordinaire n'a aucune raison de l'accepter. Ici il n'y a aucun champ de taille à perdre.
+   */
+  async placePositionLevelOrder(params: {
+    order: PositionLevelOrder;
+    isTestnet?: boolean;
+  }): Promise<HLSuccessResponse<HLPlaceOrderResponse>> {
+    const action: HLOrderAction = {
+      type: 'order',
+      orders: [this.toPositionLevelApiOrder(params.order)],
+      grouping: POSITION_LEVEL_GROUPING,
+    };
+
+    return this.executeWithNonce<
+      HLOrderAction,
+      HLSuccessResponse<HLPlaceOrderResponse>
+    >('exchange', action, params.isTestnet ?? false);
+  }
+
+  /**
+   * Modifie un ordre de position. ⚠️ Ce que l'exchange en fait n'est pas mesuré (l'application, elle, le fait en glissant
+   * l'ordre sur le graphique, mais sa fenêtre d'édition annule puis recrée).
+   */
+  async modifyPositionLevelOrder(
+    oid: HLOid,
+    order: PositionLevelOrder,
+    isTestnet: boolean = false,
+  ): Promise<HLSuccessResponse<HLPlaceOrderResponse>> {
+    const action: HLModifyAction = {
+      type: 'modify',
+      oid,
+      order: this.toPositionLevelApiOrder(order),
+    };
+
+    return this.executeWithNonce<
+      HLModifyAction,
+      HLSuccessResponse<HLPlaceOrderResponse>
+    >('exchange', action, isTestnet);
+  }
+
+  private toPositionLevelApiOrder(order: PositionLevelOrder): HLApiOrder {
+    const assetId = this.assetRegistry.getAssetId(order.assetName);
+    if (assetId === undefined) {
+      throw new Error(`Unknown asset: ${order.assetName}`);
+    }
+
+    const szDecimals = this.assetRegistry.getSzDecimals(order.assetName);
+    if (szDecimals === undefined) {
+      throw new Error(`Unknown szDecimals for: ${order.assetName}`);
+    }
+
+    // Une position n'existe que sur un perpétuel : sur un spot, l'ordre n'a pas de sens.
+    if (!this.assetRegistry.isPerpById(assetId)) {
+      throw new Error(
+        `A position-level order only exists on a perpetual market: ${order.assetName}`,
+      );
+    }
+
+    return {
+      a: assetId,
+      b: order.isBuy,
+      p: this.formatter.formatPrice(order.limitPx, szDecimals, 'perp'),
+      s: POSITION_LEVEL_WIRE_SIZE,
+      r: true,
+      t: {
+        trigger: {
+          isMarket: true,
+          triggerPx: this.formatter.formatPrice(
+            order.triggerPx,
+            szDecimals,
+            'perp',
+          ),
+          tpsl: order.tpsl,
+        },
+      },
+    };
   }
 
   // =============================================

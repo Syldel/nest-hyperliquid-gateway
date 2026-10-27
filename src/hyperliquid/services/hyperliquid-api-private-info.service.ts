@@ -3,6 +3,7 @@ import {
   HLClearinghouseState,
   HLSpotClearinghouseState,
   HLOrderStatusResponse,
+  HLOrderStatusData,
   HLOpenOrdersResponse,
   HLFrontendOpenOrdersResponse,
   HLUserFillsResponse,
@@ -150,6 +151,30 @@ export class HyperliquidApiPrivateInfoService extends HyperliquidApiBaseInfoServ
         type: 'frontendOpenOrders',
         user: this.userContext.walletAddress,
         dex,
+      },
+      isTestnet,
+    );
+  }
+
+  /**
+   * Retrieve the user's order history: up to the 2000 most recent records, each with the state it ended in.
+   *
+   * ⚠️ **One record per state an order went through**, not one per order: an order cancelled after resting appears
+   * twice (`open`, then `canceled`). Measured on 2026-10-26: 1 854 records for 1 051 distinct orders. The weight is
+   * counted on the records: 20, plus 1 per 20 returned (at most 120). `executeInfo` records it after the response,
+   * which is what the rate guard needs to know about this call.
+   *
+   * Position-level TP/SL (`isPositionTpsl: true`) appear here with their size written `0.0` while armed.
+   *
+   * @param isTestnet Whether to use the Hyperliquid testnet.
+   */
+  async getHistoricalOrders(
+    isTestnet: boolean = false,
+  ): Promise<HLOrderStatusData[]> {
+    return this.executeInfo<HLOrderStatusData[]>(
+      {
+        type: 'historicalOrders',
+        user: this.userContext.walletAddress,
       },
       isTestnet,
     );

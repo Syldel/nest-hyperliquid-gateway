@@ -37,6 +37,9 @@ Tout le trafic vers Hyperliquid passe par **deux** fonctions :
 - `HyperliquidApiBaseInfoService.executeInfo` — les lectures `/info` ;
 - `HyperliquidApiTradeService.executeWithNonce` — les actions `/exchange`.
 
+La route `GET /hyperliquid/orders/historical` (historique d'ordres, ajoutée le 2026-10-27) y passe aussi :
+elle appelle `executeInfo`, et son poids (20 + 1 par tranche de 20 enregistrements) est compté à la réponse.
+
 Les deux passent par `HyperliquidRateGuardService`
 (`src/hyperliquid/services/hyperliquid-rate-guard.service.ts`). **Tout nouvel appel à
 Hyperliquid doit passer par l'une d'elles, jamais par un `fetch` direct** : un appel qui les
