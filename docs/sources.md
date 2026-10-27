@@ -300,3 +300,54 @@ alerté.
 Et dans tous les cas : **citer où et quand**. Un chemin de fichier dans un SDK, un endpoint
 et une date de relevé, le nombre d'états distincts observés. C'est ce qui permet à la
 personne suivante de contredire la conclusion au lieu de devoir la refaire.
+
+## Lire une page de documentation en brut
+
+**Une page de documentation, de SDK ou de dépôt se lit en brut. Un outil qui résume (un
+`WebFetch` qui rend « l'essentiel » d'une page) peut aider à repérer quelle page lire ; il ne
+sert jamais à conclure.**
+
+C'est la règle ci-dessus appliquée à la lecture elle-même : dans ce qu'un résumé rend, on ne
+distingue pas ce qui a été lu de ce qui a été reformulé ou complété. Et l'erreur n'est pas
+théorique, elle a été mesurée ici :
+
+- **Une précision qui n'était pas dans le texte** (2026-10-27, page des erreurs d'Hyperliquid).
+  Lue par un outil qui résume, elle disait que l'erreur unique d'une pré-validation en échec est
+  répliquée par les SDK « pour retomber sur la longueur du lot ». Le texte brut dit seulement que
+  la réponse peut être dupliquée n fois avant d'être remise au callback (« could be duplicated n
+  times before being sent to the callback function »), sans dire qui duplique, ni pourquoi. La
+  paraphrase figurait dans les commentaires du correctif proposé ; la relecture en brut l'a
+  corrigée avant l'application. La décision de code tenait, pas son explication — et c'est
+  l'explication que la personne suivante croit.
+- **Une page lue en partie sans que ça se voie.** La page de l'endpoint (environ 120 000
+  caractères) n'avait d'abord été lue que sur ses 100 000 premiers. Seul le fichier entier permet
+  d'écrire qu'un mot n'y figure pas.
+
+**Comment**
+
+1. **Prendre le Markdown.** Chaque page de la documentation Hyperliquid (GitBook) existe en
+   `.md` en ajoutant `.md` à son URL ; la page l'annonce en tête, et l'index de toutes les pages
+   est `https://hyperliquid.gitbook.io/hyperliquid-docs/llms.txt`. Un `curl -sSL -o <fichier> <url>.md`,
+   avec `-w '%{http_code} %{size_download}\n'` pour lire le code HTTP et la taille, dans le dossier
+   jetable de la session et non dans un dépôt. Une fois par page, et on garde le fichier : c'est
+   un site de documentation et non l'API, mais il n'y a pas de raison de le solliciter en boucle.
+2. **Noter la taille.** Le nombre d'octets reçus est ce qui dénonce une troncature.
+3. **Lire le fichier, ou le chercher en entier** (l'outil de lecture, `grep` sur le fichier
+   complet), pas la page rendue. « La doc ne mentionne pas X » ne s'écrit qu'après une recherche
+   sur le texte entier.
+4. **Une page qui n'existe pas en Markdown, ou un dépôt GitHub** : le texte de la page dans le
+   navigateur interne, ou le contenu brut (`gh api`, `raw.githubusercontent.com`) — le JSON d'un
+   PR, pas un résumé de PR.
+
+**Ce qu'on écrit ensuite**
+
+- Une lecture se date et dit comment elle a été faite : « lue en brut le 2026-10-27 ».
+- **Une citation est littérale, courte, et dans la langue d'origine.** Une traduction ou une
+  paraphrase ne se met pas entre guillemets : le guillemet affirme un texte que la page n'a pas.
+- **Ce qui n'a été vu qu'à travers un résumé se marque**
+  `⚠️ lu par un outil qui résume — à relire en brut`, **et ne fonde aucun comportement du code**
+  tant que ce n'est pas relu. Reste dans ce cas, à la date de cette règle, la lecture des PR du
+  SDK communautaire (section sur `modify`, plus haut) ; la façon dont a été lu le SDK Python
+  n'est pas notée.
+- **Dire aussi ce que la page ne dit pas, avec sa portée** : « ne parle que des ordres et des
+  annulations » n'est pas « ne parle pas des modifications ».

@@ -69,6 +69,10 @@ relancer un 429** (voir la première règle).
   officiels** peuvent établir chacun, et pourquoi aucun ne remplace les autres. Les types de
   `@syldel/hl-shared-types` sont des affirmations sur l'API ; une affirmation fausse ne se
   voit pas, elle se paie plus tard.
+- **Une page de documentation se lit en brut**, jamais à travers un outil qui résume : un
+  résumé a déjà fait écrire une précision que le texte ne contient pas (2026-10-27). Comment
+  s'y prendre, et ce qu'on écrit ensuite :
+  [docs/sources.md](docs/sources.md#lire-une-page-de-documentation-en-brut).
 - **Un TP/SL « de position »** (sans taille, au marché, groupe `positionTpsl`) a sa **propre
   famille de routes**, `/orders/position-protective` : aucune route existante ne l'accepte, et
   `formatSize` refuse toujours un zéro. Voir [docs/position-level-orders.md](docs/position-level-orders.md),
