@@ -1194,6 +1194,182 @@ describe('SmartOrderService', () => {
           expect.stringContaining('Failed to modify order 101'),
         );
       });
+
+      /**
+       * Un `ok` dont les statuts ne se comptent pas un par modification.
+       *
+       * L'ordre des statuts est le SEUL lien entre une réponse et un ordre. La page des erreurs d'Hyperliquid (lue en brut le
+       * 2026-10-27) dit qu'une pré-validation en échec rend UNE seule erreur pour tout le lot, que la réponse peut être
+       * dupliquée n fois avant d'être remise au callback, et recommande de traiter ce cas. Avant, `if (!status) return;`
+       * sautait sans un mot les modifications sans statut, et le repli par annulation + recréation ne s'appliquait qu'à la
+       * première : reproduit avec un double le 2026-10-27, la modification du stop disparaissait sans trace.
+       *
+       * ⚠️ Cette page ne parle que des erreurs d'ordre et d'annulation : rien sur `modify`. Que l'erreur unique existe pour un
+       * `batchModify`, sous quelle enveloppe (`ok` à un statut, ou `err`), et quel est le texte d'une erreur de `modify`,
+       * n'est PAS mesuré : les doubles construisent la FORME (une liste trop courte ou trop longue, ou absente) avec le même
+       * libellé neutre que plus haut. Ce qu'ils figent est la décision : ne rien attribuer à un ordre quand on ne peut pas
+       * aligner les statuts sur les modifications.
+       */
+      describe('an ok answer that does not hold one status per modification', () => {
+        const okWith = (statuses: unknown[]) => ({
+          status: 'ok',
+          response: { type: 'order', data: { statuses } },
+        });
+        const loneError = okWith([{ error: refusedText }]);
+
+        it.each([
+          ['one error for two modifications', loneError],
+          ['an empty list of statuses', okWith([])],
+          [
+            'a status too many',
+            okWith([
+              { resting: { oid: 1111 } },
+              { resting: { oid: 1222 } },
+              { error: refusedText },
+            ]),
+          ],
+          [
+            'no list of statuses',
+            { status: 'ok', response: { type: 'order', data: {} } },
+          ],
+          ['no data at all', { status: 'ok', response: { type: 'order' } }],
+          ['no response at all', { status: 'ok' }],
+        ])('ends with a clear refusal (422) on %s', async (_label, answer) => {
+          batchModifyOrdersSpy.mockResolvedValue(answer);
+
+          const error = await failureOf(
+            service.placeBatchProtectiveOrders(desired, false),
+          );
+
+          expect(error.getStatus()).toBe(422);
+          expect(error.getResponse()).toMatchObject({
+            error: 'EXCHANGE_BATCH_MODIFY_UNMATCHED',
+          });
+        });
+
+        // Le cas qui a fait écarter « lever dès le refus » vaut ici aussi : sans lui, la position reste sans stop.
+        it('still places the missing stop when the list of statuses is short', async () => {
+          getFrontendOpenOrdersSpy.mockResolvedValue([
+            makeOrderFromSpec('101_0.5_9000_tp', assetName),
+          ]);
+          batchModifyOrdersSpy.mockResolvedValue(okWith([]));
+
+          await expect(
+            service.placeBatchProtectiveOrders(
+              {
+                assetName,
+                isBuy,
+                tp: [{ price: '9100', sz: '0.6' }], // modifie le TP 101
+                sl: [{ price: '8100', sz: '0.35' }], // le stop MANQUE : à créer
+              },
+              false,
+            ),
+          ).rejects.toThrow('"sl":{"cancelled":[],"created":[201]');
+
+          expect(placeOrderSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+              order: expect.objectContaining({
+                orderType: {
+                  trigger: expect.objectContaining({
+                    tpsl: 'sl',
+                    triggerPx: '8100',
+                  }) as unknown,
+                },
+              }) as unknown,
+            }),
+          );
+        });
+
+        // Un seul statut ne dit pas de QUEL ordre il parle : on ne le devine pas. L'ancien code le prenait pour celui du TP 101
+        // (annulation + recréation) et laissait le stop 102 en l'état, sans un mot.
+        it('does not guess which order a lone error is about: no fallback, no cancel', async () => {
+          batchModifyOrdersSpy.mockResolvedValue(loneError);
+
+          await expect(
+            service.placeBatchProtectiveOrders(desired, false),
+          ).rejects.toThrow();
+
+          expect(cancelOrderSpy).not.toHaveBeenCalled();
+          // la seule création du plan (le TP 9200), pas la recréation du TP 101
+          expect(placeOrderSpy).toHaveBeenCalledTimes(1);
+          expect(logError).not.toHaveBeenCalledWith(
+            expect.stringContaining('Failed to modify order'),
+          );
+        });
+
+        it('credits no modification on the strength of a status it cannot match', async () => {
+          batchModifyOrdersSpy.mockResolvedValue(
+            okWith([{ resting: { oid: 1111 } }]),
+          );
+
+          const error = await failureOf(
+            service.placeBatchProtectiveOrders(desired, false),
+          );
+
+          // `updated` reste vide des deux côtés : le 1111 n'est attribué ni au TP ni au stop
+          expect(error.message).toContain(
+            '"tp":{"cancelled":[],"created":[201],"updated":[]}',
+          );
+          expect(error.message).toContain(
+            '"sl":{"cancelled":[],"created":[],"updated":[]}',
+          );
+        });
+
+        it('names the counts and the raw answer in the message', async () => {
+          batchModifyOrdersSpy.mockResolvedValue(loneError);
+
+          const failure = service.placeBatchProtectiveOrders(desired, false);
+
+          await expect(failure).rejects.toThrow('2 protective order(s)');
+          await expect(failure).rejects.toThrow('1 status(es)');
+          await expect(failure).rejects.toThrow(
+            `"statuses":[{"error":"${refusedText}"}]`,
+          );
+          await expect(failure).rejects.toThrow('WERE sent');
+        });
+
+        it('logs the raw answer as an error before anything else of the plan is written', async () => {
+          batchModifyOrdersSpy.mockResolvedValue(loneError);
+
+          await expect(
+            service.placeBatchProtectiveOrders(desired, false),
+          ).rejects.toThrow();
+
+          expect(logError).toHaveBeenCalledWith(
+            expect.stringContaining('cannot be matched one to one'),
+          );
+          expect(logError).toHaveBeenCalledWith(
+            expect.stringContaining(`"statuses":[{"error":"${refusedText}"}]`),
+          );
+          expect(logError.mock.invocationCallOrder[0]).toBeLessThan(
+            placeOrderSpy.mock.invocationCallOrder[0],
+          );
+        });
+
+        // La frontière : un lot d'UNE modification n'a droit qu'à UN statut, et celui-là est bien le sien. Une erreur de
+        // pré-validation de tout le lot est alors indiscernable d'un refus de cet ordre : le repli par ordre s'applique, comme
+        // pour tout refus par ordre (voir plus haut).
+        it('still reads the only status of a one-modification batch as its own', async () => {
+          getFrontendOpenOrdersSpy.mockResolvedValue([
+            makeOrderFromSpec('101_0.5_9000_tp', assetName),
+          ]);
+          batchModifyOrdersSpy.mockResolvedValue(
+            okWith([{ error: refusedText }]),
+          );
+
+          const result = await service.placeBatchProtectiveOrders(
+            { assetName, isBuy, tp: [{ price: '9100', sz: '0.6' }], sl: [] },
+            false,
+          );
+
+          expect(cancelOrderSpy).toHaveBeenCalledWith(
+            [{ oid: 101, asset: 7 }],
+            false,
+          );
+          expect(result.tp.cancelled).toEqual([101]);
+          expect(result.tp.created).toEqual([201]);
+        });
+      });
     });
   });
 

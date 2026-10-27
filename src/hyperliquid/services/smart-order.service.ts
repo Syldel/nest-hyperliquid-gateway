@@ -1125,9 +1125,12 @@ export class SmartOrderService {
       );
     }
 
-    // La réponse brute d'un lot de modifications que l'exchange ne reconnaît pas comme accepté (voir plus bas, avant le
-    // `return`) : consignée au journal dès qu'elle arrive, levée seulement après annulations et créations.
-    let refusedModify: string | undefined;
+    // Ce qu'on a dû renoncer à lire dans la réponse du lot de modifications (voir plus bas, avant le `return`) : consigné au
+    // journal dès que la réponse arrive, levé seulement après annulations et créations. `logged` et `thrown` disent la même
+    // chose pour deux lecteurs, le journal et l'appelant.
+    let modifyFailure:
+      | { code: string; logged: string; thrown: string }
+      | undefined;
 
     if (modifies.length > 0) {
       const bathModifyRes = await this.tradeService.batchModifyOrders(
@@ -1135,7 +1138,16 @@ export class SmartOrderService {
         isTestnet,
       );
 
-      if (bathModifyRes?.status === 'ok') {
+      const answered =
+        bathModifyRes?.status === 'ok'
+          ? bathModifyRes.response?.data?.statuses
+          : undefined;
+
+      if (
+        bathModifyRes?.status === 'ok' &&
+        Array.isArray(answered) &&
+        answered.length === modifies.length
+      ) {
         const bmStatus = bathModifyRes.response.data.statuses;
 
         modifies.forEach((m, index) => {
@@ -1186,16 +1198,41 @@ export class SmartOrderService {
             }
           }
         });
+      } else if (bathModifyRes?.status === 'ok') {
+        // Un « ok » dont les statuts ne se comptent pas un par modification. L'ordre des statuts est le SEUL lien entre une
+        // réponse et un ordre ; or la page des erreurs d'Hyperliquid (lue en brut le 2026-10-27) dit qu'une pré-validation en
+        // échec rend UNE seule erreur pour tout le lot, que la réponse peut être dupliquée n fois avant d'être remise au
+        // callback, et recommande de traiter ce cas. ⚠️ Elle ne parle que des erreurs d'ordre et d'annulation : rien sur
+        // `modify`, dont les exemples de réponse sont vides dans la page de l'endpoint. Que cette erreur unique existe pour un
+        // `batchModify`, et qu'elle arrive en `ok` à un statut plutôt qu'en `err`, n'est pas mesuré : les deux sont couverts
+        // (ici, et par la branche suivante). Avant, `if (!status) return;` sautait sans un mot les modifications sans
+        // statut, et le repli par annulation + recréation ne s'appliquait qu'à la première (reproduit avec un double le
+        // 2026-10-27 : la modification du stop disparaissait sans trace, rien dans le journal ni dans le compte rendu).
+        // On n'attribue donc RIEN (ni `updated`, ni repli par ordre) : un statut posé sur le mauvais ordre serait pire qu'un
+        // statut absent. Même suite que le refus d'ensemble : consigner, finir le plan, lever.
+        const count = Array.isArray(answered) ? answered.length : 'no';
+        const rawAnswer = JSON.stringify(bathModifyRes);
+        modifyFailure = {
+          code: 'EXCHANGE_BATCH_MODIFY_UNMATCHED',
+          logged: `batchModify of ${modifies.length} protective order(s) answered ok with ${count} status(es), which cannot be matched one to one: ${rawAnswer}`,
+          thrown:
+            `Hyperliquid answered the batchModify of ${modifies.length} protective order(s) with ${count} status(es), which cannot be matched one to one, ` +
+            `so none is reported as applied although some may have been: ${rawAnswer}`,
+        };
+        this.logger.error(modifyFailure.logged);
       } else {
         // Toute réponse qui n'est pas un « ok » (l'enveloppe `{ status: 'err', response }`, un objet vide, rien) : avant,
         // ce bloc sautait en silence. Ici on consigne, et on NE lève PAS encore : ce qui protège doit partir d'abord.
         // `JSON.stringify(undefined)` rend `undefined`, pas une chaîne : sans le repli, une absence de réponse passerait pour
         // « pas de refus ».
         const rawAnswer: string | undefined = JSON.stringify(bathModifyRes);
-        refusedModify = rawAnswer ?? 'no answer';
-        this.logger.error(
-          `batchModify of ${modifies.length} protective order(s) refused as a whole: ${refusedModify}`,
-        );
+        const raw = rawAnswer ?? 'no answer';
+        modifyFailure = {
+          code: 'EXCHANGE_BATCH_MODIFY_REFUSED',
+          logged: `batchModify of ${modifies.length} protective order(s) refused as a whole: ${raw}`,
+          thrown: `Hyperliquid refused the batchModify of ${modifies.length} protective order(s) as a whole: ${raw}`,
+        };
+        this.logger.error(modifyFailure.logged);
       }
     }
 
@@ -1285,10 +1322,10 @@ export class SmartOrderService {
     // mesuré pour un `batchModify` : le texte d'un refus de `modify` sur un déclencheur n'est pas connu. D'où la demande de
     // relire le carnet. Pas de repli par annulation + recréation pour un lot refusé en entier : sa cause est inconnue, et ce
     // repli ouvre une fenêtre sans protection (voir `docs/sources.md`).
-    if (refusedModify !== undefined) {
+    if (modifyFailure !== undefined) {
       throw new HyperliquidGatewayException(
-        'EXCHANGE_BATCH_MODIFY_REFUSED',
-        `Hyperliquid refused the batchModify of ${modifies.length} protective order(s) as a whole: ${refusedModify}. ` +
+        modifyFailure.code,
+        `${modifyFailure.thrown}. ` +
           `The modifications are not reported as applied; the cancels and creations of the same plan WERE sent, accepted: ${JSON.stringify(result)}. ` +
           `Read the open orders before anything else.`,
         HttpStatus.UNPROCESSABLE_ENTITY,
