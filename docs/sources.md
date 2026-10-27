@@ -169,8 +169,9 @@ vers un déclencheur déjà franchi). Lue à la lettre, la doc aurait rejeté ch
 **Piste datée, relevée le 2026-10-27 : les deux drapeaux sont récents.** Ce n'est qu'une piste — la règle de ce document veut que
 seule une source de première partie conclue, et ce qui suit vient d'un SDK communautaire et d'un miroir tiers de l'annonce :
 
-- **L'annonce du canal API** : message 327, du **2026-06-11**, qui date `a` six jours avant le SDK. Texte relevé sur un miroir
-  tiers (voir plus bas, « Ce que le canal d'annonces dit »).
+- **Les annonces du canal API** : le message 325, du **2026-06-08**, annonce une restriction des `modify` vers l'exécution
+  immédiate ; le message 327, du **2026-06-11**, introduit `a` et date donc le drapeau six jours avant le SDK. Textes relevés sur
+  un miroir tiers (voir plus bas, « Ce que le canal d'annonces dit »).
 - **Le SDK nktkas/hyperliquid** (communautaire) a ajouté `a` à `modify`/`batchModify` (PR #145, le **2026-06-17**) et `f` à
   `cancel`/`cancelByCloid` (PR #146, le **2026-06-17** aussi), soit environ quatre mois avant cette lecture. Les trois PR ont été
   relus **en brut** le 2026-10-27 (`api.github.com` : JSON, diff et commentaires) :
@@ -196,17 +197,26 @@ seule une source de première partie conclue, et ce qui suit vient d'un SDK comm
 **Lecture la plus plausible, non prouvée : la règle est annoncée mais pas encore appliquée.** L'auteur du PR #145 écrit que
 « Once HL enforces the new semantics », un `modify` visant un ordre à déclencheur (TP/SL) sera rejeté sans `a: true`. Cela
 s'accorde avec nos mesures — des `modify` d'ordres à déclencheur acceptés sans `a`, y compris le 2026-10-27 — sans rien forcer.
-**Mais l'annonce elle-même ne dit pas cela** : elle décrit une capacité et n'annonce ni rejet, ni date d'application, ni un mot
-sur les TP/SL. « Once HL enforces » est la déduction du contributeur, tirée de la doc. La doc, elle, ne parle d'une « future mise
-à niveau du réseau » que pour l'effet de `f` sur le mempool ; pour `a` et pour le rejet des ordres à déclencheur par `f: true`,
-elle écrit au présent.
+**Mais aucune annonce lue ne dit cela.** Elles se font en deux temps. Le message 325 annonce, « à la prochaine mise à niveau »,
+une **restriction** : un `modify` ne pourra plus passer en exécution immédiate (nouvelle TIF qui ne repose pas au carnet, par
+exemple IOC : rejeté ; GTC : transformé en ALO). Le 327 ajoute ensuite le champ qui la lève. La restriction annoncée est donc
+réelle, et le cadrage « simple capacité » du 327 pris seul ne tenait pas ; mais **elle vise l'exécution immédiate** : aucun
+message lu ne parle du rejet d'un `modify` de TP/SL vers un autre déclencheur, ni d'une date d'application. Le 327 écrit
+« executable or trigger orders » sans dire si un ordre qui est déjà un déclencheur y entre. « Once HL enforces » reste la
+déduction du contributeur, tirée de la doc. La doc, elle, ne parle d'une « future mise à niveau du réseau » que pour l'effet de
+`f` sur le mempool ; pour `a` et pour le rejet des ordres à déclencheur par `f: true`, elle écrit au présent.
+
+Lecture, non éprouvée : si la mise à niveau qui a suivi le 325 a eu lieu (le 328 en annonce une pour le 2026-06-13 à 9:00 UTC),
+la restriction annoncée serait appliquée depuis plus de quatre mois, et elle expliquerait pourquoi les tests **exécutables** du
+PR #157 (2026-06-19) ont eu besoin de `a`. Elle n'expliquerait pas ses tests à déclencheur, ni nos `modify` de TP/SL acceptés.
 
 ⚠️ **Ce qui n'est pas établi :**
 
-- **La date d'application**, et si la règle l'est déjà dans un cas ou sur le testnet : rien ici ne la donne. L'annonce Telegram
-  a été relevée en partie (messages 326, 327 et 329, sur un miroir tiers) : l'annonce du 2026-06-11 borne la date de `a` par le
-  haut, aucun message lu ne fixe la date d'application. Les messages 325, 328, 330 (environ 20 h avant le PR #157), 331 et tous
-  les suivants (le canal va au moins jusqu'au 350, le 2026-08-05) ne sont pas lus. La doc, relue **en brut** (`curl`, sans outil qui
+- **La date d'application**, et si la règle l'est déjà dans un cas ou sur le testnet : rien ici ne la donne. Le canal Telegram a
+  été relevé du message 306 (2026-04-04) au 364 (2026-08-29), sur un miroir tiers, le 2026-10-27 : les annonces du 2026-06-08
+  (325) et du 2026-06-11 (327) bornent la date de `a` par le haut, et aucun autre de ces 59 messages ne parle de `modify`.
+  Aucun ne fixe la date d'application de la règle sur les déclencheurs. **Non lus : les messages 365 à 384** (le canal va
+  jusqu'au 384, le 2026-10-26, vérifié sur `t.me`), soit les deux derniers mois, et tout ce qui précède le 306. La doc, relue **en brut** (`curl`, sans outil qui
   résume) le 2026-10-27, n'aide pas : la page de l'endpoint (120 880 octets, en entier), celle des erreurs et celle de la latence
   ne montrent ni date ni « last updated », et l'index `llms.txt` (159 lignes) ne liste aucune page de journal des changements,
   d'annonces ou de mises à niveau. Ces changements ne s'annoncent donc que sur le canal Telegram de l'API : à suivre par une
@@ -223,16 +233,31 @@ elle écrit au présent.
   modification, et celle de son refus, ne sont donc écrites nulle part. La doc place en revanche `a` **au niveau de l'action**,
   après `order` (`modify`) ou `modifies` (`batchModify`) : un seul drapeau pour tout un lot.
 
-### Ce que le canal d'annonces dit (messages 326, 327 et 329, relevés le 2026-10-27)
+### Ce que le canal d'annonces dit (messages 306 à 364 relevés le 2026-10-27, ceux qui nous concernent ci-dessous)
 
 **Le statut de ce relevé : un miroir tiers.** Le canal Telegram `hyperliquid_api` (« Hyperliquid API Announcements », 2 878
 abonnés) n'expose pas ses textes sur le web : `t.me/hyperliquid_api/<n>?embed=1&mode=tme` rend le numéro, la minute et le nombre
-de vues, puis « Please open Telegram to view this post », et `t.me/s/hyperliquid_api` ne montre que la carte du canal. Les trois
-textes ont été **collés par l'utilisateur depuis Telemetr.io**, un agrégateur : la règle de ce document veut qu'on n'en tire que
-ce qu'une source de première partie recoupe. Sont recoupés : les numéros et les minutes (Telemetr affiche l'heure locale de
-l'utilisateur, UTC+2 en juin, soit l'heure de `t.me` plus deux heures, minute pour minute), et, pour deux points, la doc officielle
-lue en brut. Ne l'est pas : la formulation exacte.
+de vues, puis « Please open Telegram to view this post », et `t.me/s/hyperliquid_api` ne montre que la carte du canal. Les textes
+ont été relevés sur **la page d'archive de Telemetr.io, collée en HTML par l'utilisateur le 2026-10-27** (59 messages, numéros 306
+à 364) : un agrégateur, protégé par Cloudflare, que l'agent ne lit pas lui-même (403, puis un contrôle humain qu'il ne contourne
+pas). La règle de ce document veut qu'on n'en tire que ce qu'une source de première partie recoupe. Sont recoupés : les numéros
+et les minutes. Ne l'est pas : la formulation exacte.
 
+**D'où viennent les numéros** : pour le 345 au 364, des données structurées de la page (numéro et heure UTC exacte) ; pour les
+plus anciens, un décompte à rebours depuis le 364 (la page n'affiche que l'heure locale de l'utilisateur, UTC+2 en été, soit
+l'heure de `t.me` plus deux heures). Ce décompte tombe à la minute près sur treize repères relevés sur `t.me` (324 à 331, 335,
+340, 345, 350 et 364). **Les numéros 306 à 323 sont comptés sans repère.** Un numéro qui ne repose pas sur un de ces moyens ne
+se cite pas.
+
+- **325** (2026-06-08, 15:38 UTC) : « à la prochaine mise à niveau », un `modify` ne prendra plus en charge le passage en
+  **exécution immédiate** : si la TIF du nouvel ordre ne repose pas au carnet (l'exemple donné est IOC), le `modify` est
+  rejeté ; si elle est GTC, il se transforme en ordre ALO. **C'est l'annonce que lève le champ `a` du 327**, trois jours plus
+  tard. Elle ne dit rien des ordres à déclencheur. Les `modify` que le gateway et le bot
+  envoient d'eux-mêmes sont à déclencheur (réalignement des protections, ordre de position). Le gateway expose aussi un `modify` ordinaire
+  (`/hyperliquid/order/modify`) : le bot n'a aucun appelant de ses méthodes `modifyOrder` et `batchModifyOrders` (relevé du
+  2026-10-27), mais l'application mobile modifie ainsi un ordre ouvert (`order-form.component.ts`). ⚠️ **Non relu pour ce
+  document** : la TIF que ce formulaire envoie, et donc ce que devient, après le 325, l'édition d'un ordre limite vers un prix
+  qui croise le carnet.
 - **326** (2026-06-09, 11:36 UTC) : les fréquences d'envoi de plusieurs abonnements **WebSocket** changent « à la prochaine mise à
   niveau » (`l2Book`, `allMids`, `spotAssetCtxs`, `allDexsAssetCtxs`, `webData2`), puis corrigées par le message 327. **Aucun
   usage chez nous** : aucune occurrence de `WebSocket` ni de `wss://` dans `src/` du gateway, du bot et de l'application mobile
@@ -242,9 +267,11 @@ lue en brut. Ne l'est pas : la formulation exacte.
 - **327** (2026-06-11, 10:48 UTC) : `modify` et `batchModify` « now support » un champ optionnel « always place », qui permet de
   modifier un ordre **en** un ordre exécutable ou à déclencheur, pour des parcours « less common » où une modification doit
   s'exécuter au lieu de rester au carnet. C'est **la date de `a`**, six jours avant le SDK. Le libellé est celui d'une
-  **capacité** : ni rejet, ni date d'application, ni TP/SL n'y figurent. Il s'accorde avec la page de l'endpoint (ce que
-  `a = false` interdit) ; il ne dit pas si la modification d'un ordre à déclencheur **vers** un ordre à déclencheur est comprise,
-  et la mesure du 2026-10-27 montre qu'elle est acceptée sans `a`, au moins sur le mainnet.
+  **capacité** : lu seul, ni rejet, ni date d'application, ni TP/SL n'y figurent ; lu avec le 325, c'est la levée de la
+  restriction qu'il annonce. Il s'accorde avec la page de l'endpoint (ce que `a = false` interdit) ; il ne dit pas si la
+  modification d'un ordre à déclencheur **vers** un ordre à déclencheur est comprise, et la mesure du 2026-10-27 montre qu'elle
+  est acceptée sans `a`, au moins sur le mainnet. Il ajuste aussi le 326 : `webData2` inchangé une mise à niveau de plus,
+  `l2Book` sans `fast` toutes les 2 secondes puis 5, et un abonnement `fastAssetCtxs`.
 - **329** (2026-06-17, 09:41 UTC — en plein dans la vie du PR #146, ouvert à 08:55 et fusionné à 10:12 UTC ; aucun lien établi) :
   - les frais prioritaires de lecture et d'écriture sont dans le périmètre du bug bounty, avec un correctif sur l'obtention de la
     priorité ALO par des ordres non ALO : sans objet pour nous, qui n'en utilisons pas ;
@@ -254,8 +281,30 @@ lue en brut. Ne l'est pas : la formulation exacte.
   - **le minimum d'ordre** : à la prochaine mise à niveau, la formule devient prévisible, fondée sur le **prix limite** d'un ordre
     au repos et sur le **prix de première exécution** d'un ordre exécutable, **au lieu du prix mark**.
 
-⚠️ **Le minimum d'ordre : une piste, non mesurée.** La date de la mise à niveau est inconnue (probablement passée au 2026-10-27,
-rien ne l'établit), et on ignore ce que « prix de première exécution » vaut pour un ordre à déclencheur qui se déclenche. Deux
+- **330** (2026-06-18, 09:58 UTC) : à la prochaine mise à niveau, les frais de priorité d'ordre s'étendent aux ordres IOC de
+  tous les actifs hors outcome. Aucun usage chez nous : aucune occurrence de `priorityFee`, de « priority fee » ni de `gossip` dans `src/` du
+  gateway, du bot et de `hl-shared-types` (relevé du 2026-10-27). ⚠️ Le nom du champ sur le fil n'a pas été lu (la page
+  `priority-fees` ne l'a pas été) : ce relevé ne couvre que ces mots.
+- **332** (2026-06-24, 03:48 UTC) : `webData2` sera arrêté trois mises à niveau plus tard. Aucun usage chez nous (voir le 326).
+- **335** (2026-07-02, 03:28 UTC) : « as previously announced on 5 May », l'abstraction **DEX** est arrêtée à la prochaine mise à
+  niveau (la suivante annoncée est le 336, pour le 2026-07-04 à 8:15 UTC, report non exclu). La chaîne d'annonces : 312
+  (2026-04-16), 316 (04-29), 319 (05-05), 335. Pour les traders automatiques, le 312 conseille l'abstraction « Standard » pour
+  les limites de débit les plus hautes, le 335 l'abstraction « disabled ». `hyperliquid-collateral.service.ts` traite déjà
+  `dexAbstraction` comme un mode non pris en charge, en écrivant que l'exchange l'a arrêté : ce commentaire a désormais une
+  source datée. ⚠️ **Non vérifié ici** : le mode du compte réellement utilisé, et si la recommandation du 312 touche notre garde
+  de débit.
+- **340** (2026-07-12, 08:09 UTC) : les frais de priorité ALO et la gamme complète des frais IOC sont actifs sur le mainnet, « neither
+  includes breaking changes for API users ». La page `optimizing-latency` devient « the docs entry point for technical details
+  about latency » : **c'est la seule date que cette page porte**, et elle ne dit que ceci, qu'elle est la page d'entrée au plus
+  tard depuis le 2026-07-12, pas depuis quand elle existe.
+- **359** (2026-08-25) : les ordres trailing stop sont actifs sur le testnet. **363** (2026-08-28) : les déploiements HIP-4 sans
+  permission (marchés outcome) seront activés à la prochaine mise à niveau. Rien à changer ici ; à relire face au refus des
+  marchés outcome par leur nom côté bot.
+
+⚠️ **Le minimum d'ordre : une piste, non mesurée.** La mise à niveau qui suit le 329 est, sauf report, celle que le 331 annonce
+pour le 2026-06-20 à 9:00 UTC (le 347 montre qu'un horaire peut être déplacé) : le changement de base daterait donc d'environ
+quatre mois avant les mesures du 2026-10-20. On ignore en revanche ce que « prix de première exécution » vaut pour un ordre à
+déclencheur qui se déclenche. Deux
 endroits encodent le minimum de 10 $ : `domain/order-minimum.ts` du bot (mesuré le 2026-10-20, voir
 `nest-trading-bot/docs/known-gaps.md`) et le contrôle local du gateway (`smart-order.service.ts`, `sz × price <= 10`, avec un
 TODO), calculé sur son propre prix. Le verdict de l'exchange fait autorité, pas ce contrôle : à mesurer avant de supposer qu'ils
@@ -411,6 +460,7 @@ théorique, elle a été mesurée ici :
   tant que ce n'est pas relu. La lecture des PR du SDK communautaire, d'abord faite par un
   résumé, a été refaite en brut le 2026-10-27 (section sur `modify`, plus haut). Restent dans ce
   cas la façon dont a été lu le SDK Python, qui n'est pas notée, et les textes des messages du
-  canal d'annonces, relevés sur un miroir tiers.
+  canal d'annonces, relevés sur un miroir tiers (page Telemetr.io collée le 2026-10-27, messages 306 à 364 ; les 365 à 384 ne
+  sont pas lus).
 - **Dire aussi ce que la page ne dit pas, avec sa portée** : « ne parle que des ordres et des
   annulations » n'est pas « ne parle pas des modifications ».
