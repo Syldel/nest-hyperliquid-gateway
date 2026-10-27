@@ -102,6 +102,17 @@ d'un paramètre privé de `SmartOrderService.marketTriggerLimitPx` a été élar
 - Un stop créé **par l'API** devant une position qui **grandit** : mesuré par l'interface le 2026-10-26 (0,011 fermés pour un
   stop posé sur 0,006), pas par l'API ; les pas 1 à 4 ont fait rétrécir la position.
 - Un autre actif qu'ETH, et plus d'un essai par pas.
+- **Ce que dit la doc officielle de `modify`, et que la mesure dément** : sans le drapeau `a` (que nous n'envoyons jamais), le
+  nouvel ordre d'un `modify` « doit être un ordre sans déclencheur ». Nos deux `modify` de stop de position ont pourtant été
+  acceptés. Aucune règle n'est connue comme appliquée ou non : voir `docs/sources.md`, qui donne aussi le signal à surveiller.
+- **L'accusé `default` d'un `modify` ne prouve pas que l'ordre a bougé** : seul le carnet relu le prouve (les pas 3 et 4 l'ont
+  relu). Toute adoption doit relire les ordres ouverts après chaque modification.
+- **`batchModify` d'un ordre de position, non mesuré.** Ses statuts portent d'ordinaire le nouvel oid
+  (`resting.oid`, lu par le réalignement), ce qui éviterait de relire le carnet. Mais le statut d'un ordre de position pourrait
+  être la chaîne `"waitingForTrigger"`, comme à la création. ⚠️ **Dans ce cas le réalignement ne le verrait pas** : il lit
+  `status.resting?.oid` puis `status.error`, qui n'existent ni l'un ni l'autre sur une chaîne, et l'ordre ne serait ni `updated`
+  ni en erreur — il disparaîtrait du compte rendu sans un mot. Lu dans le code (`smart-order.service.ts`, réalignement), non
+  observé : il faudrait qu'un ordre de position soit pris pour un ordre du bot.
 - Les chemins existants qui touchent des ordres du compte sans savoir qu'ils sont « de position » : `smart-order`
   (réalignement par `batchModify`) les traiterait comme les siens, avec une taille. Non observé, non modifié.
 

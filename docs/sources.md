@@ -148,6 +148,40 @@ Il est de première partie, pas infaillible, et le citer ne dispense pas de mesu
   décimaux voyagent en `str`, ce que `DecimalString` traduit. Ne pas recopier un type, en
   lire la **structure**.
 
+## Un cas où la documentation et la mesure se contredisent : modifier un ordre à déclencheur
+
+Relevé le 2026-10-27, page `exchange-endpoint` de la doc officielle (sections « Cancel order(s) », « Modify an order »).
+
+- **`modify` et `batchModify` ont un drapeau optionnel `a` (`always_place`).** Avec `a = true`, le nouvel ordre est posé que
+  l'annulation de l'ancien ait réussi ou non. Avec `a = false`, la doc dit que le nouvel ordre **doit être un ordre sans
+  déclencheur**, en `Alo` ou en `Gtc` non exécutable. `a` doit être **omis** quand il vaut `false` : une action hachée avec
+  `a: false` est rejetée.
+- **`cancel` et `cancelByCloid` ont un drapeau optionnel `f` (`fast`).** Avec `f: true`, la doc dit que l'ordre est rejeté s'il
+  désigne un ordre à déclencheur ; `f` n'a aujourd'hui aucun autre effet et doit lui aussi être omis quand il vaut `false`.
+- **Notre code n'envoie jamais ni `a` ni `f`** (aucune occurrence dans `src/`). Il est donc, selon la doc, dans le cas
+  `always_place = false`.
+
+**La mesure dit le contraire, aujourd'hui.** Des ordres à déclencheur ont été modifiés sans `a`, et acceptés : le
+réalignement des protections par `batchModify` (quatre réalignements, quatre `updated`, zéro repli, voir
+`nest-trading-bot/docs/trading/professional-practices.md`) et, le 2026-10-27, deux `modify` d'un stop de position (le second
+vers un déclencheur déjà franchi). Lue à la lettre, la doc aurait rejeté chacun de ces ordres.
+
+Ce qu'on ne sait pas : si la règle n'est pas encore appliquée (la doc parle d'une « future mise à niveau du réseau » pour l'effet
+de `f`, rien de tel pour `a`), ou si elle vise un cas plus étroit (le nouvel ordre posé quand l'annulation a échoué). **On ne tranche pas d'ici** — et la
+conclusion qui compte est ailleurs :
+
+- **Un signal précoce à surveiller** : un `Failed to modify order` dans le journal du gateway, ou un `cancelled` non nul au
+  retour de `batch-protective`. Si la règle se mettait à être appliquée, c'est là que ça se verrait. Le réalignement
+  retomberait alors sur annulation + recréation (le repli existe), avec la seconde sans protection que `batchModify`
+  évitait ; la route `position-protective/modify`, elle, n'a pas de repli et échouerait bruyamment.
+- **`a: true` n'a pas été mesuré sur un stop, et n'est pas à activer sans mesure** : il poserait le nouvel ordre même si
+  l'ancien venait de se déclencher.
+- **`f: true` n'est pas utilisable pour annuler un stop ou un take-profit.** Si un chemin d'urgence veut un jour une annulation
+  prioritaire, elle ne vaudra pas pour les ordres à déclencheur.
+
+C'est le cas inverse de celui qui a fait écrire ce document : ici la doc est précise et c'est la mesure qui la dément. Aucune des
+deux ne dispense de l'autre.
+
 ## La règle qui précède les trois
 
 **Seules les sources de première partie concluent** : l'exchange, sa documentation, son SDK
