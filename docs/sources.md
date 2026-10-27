@@ -166,21 +166,90 @@ réalignement des protections par `batchModify` (quatre réalignements, quatre `
 `nest-trading-bot/docs/trading/professional-practices.md`) et, le 2026-10-27, deux `modify` d'un stop de position (le second
 vers un déclencheur déjà franchi). Lue à la lettre, la doc aurait rejeté chacun de ces ordres.
 
-Ce qu'on ne sait pas : si la règle n'est pas encore appliquée (la doc parle d'une « future mise à niveau du réseau » pour l'effet
-de `f`, rien de tel pour `a`), ou si elle vise un cas plus étroit (le nouvel ordre posé quand l'annulation a échoué). **On ne tranche pas d'ici** — et la
-conclusion qui compte est ailleurs :
+**Piste datée, relevée le 2026-10-27 : les deux drapeaux sont récents.** Ce n'est qu'une piste — la règle de ce document veut que
+seule une source de première partie conclue, et l'essentiel de ce qui suit vient d'un SDK communautaire :
 
-- **Un signal précoce à surveiller** : un `Failed to modify order` dans le journal du gateway, ou un `cancelled` non nul au
-  retour de `batch-protective`. Si la règle se mettait à être appliquée, c'est là que ça se verrait. Le réalignement
-  retomberait alors sur annulation + recréation (le repli existe), avec la seconde sans protection que `batchModify`
-  évitait ; la route `position-protective/modify`, elle, n'a pas de repli et échouerait bruyamment.
+- **Le SDK nktkas/hyperliquid** (communautaire) a ajouté `a` à `modify`/`batchModify` (PR #145) et `f` à `cancel`/`cancelByCloid`
+  (PR #146), tous deux le **2026-06-17**, soit environ quatre mois avant cette lecture. Le corps du PR #145 écrit que Hyperliquid
+  a ajouté `always_place`, « announced in the HL API channel » (canal Telegram de l'API, messages 325 et 327 ;
+  `https://t.me/hyperliquid_api/327`). Un PR de test du 2026-06-19 (#157) fait passer `a: true` dans ses tests de `modify`
+  d'ordres à déclencheur ; son corps est vide, il n'explique rien.
+- **Le SDK Python officiel** (première partie), `master` lu le 2026-10-27 : ses actions `batchModify`, `cancel` et
+  `cancelByCloid` ne portent ni `a` ni `f`. Ce silence n'est pas une réponse (voir plus haut : il ne type pas tout, et il peut
+  simplement être en retard).
+- **Nos propres modèles** : `hl-shared-types` date du 2026-01-15, et ses interfaces `cancel` et `modify` n'ont pas été touchées
+  depuis le 2026-01-18. Elles précèdent donc juin 2026 : leur silence est cohérent avec des drapeaux récents, sans le prouver
+  à lui seul.
+
+**Lecture la plus plausible, non prouvée : la règle est annoncée mais pas encore appliquée.** L'auteur du PR #145 écrit que
+« Once HL enforces the new semantics », un `modify` visant un ordre à déclencheur (TP/SL) sera rejeté sans `a: true`. Cela
+s'accorde avec nos mesures — des `modify` d'ordres à déclencheur acceptés sans `a`, y compris le 2026-10-27 — sans rien forcer.
+La doc, elle, ne parle d'une « future mise à niveau du réseau » que pour l'effet de `f` sur le mempool ; pour `a` et pour le rejet
+des ordres à déclencheur par `f: true`, elle écrit au présent.
+
+⚠️ **Ce qui n'est pas établi :**
+
+- **La date d'application**, et si la règle l'est déjà dans un cas ou sur le testnet : rien ici ne la donne. L'annonce Telegram
+  n'a pas été lue ; la date du SDK la borne par le haut, elle ne la fixe pas. La page de la doc n'a été lue que sur ses
+  100 000 premiers caractères (sur environ 120 000) et n'y montrait aucune date de mise à jour.
+- **Que la règle vise ce que le PR en dit** : c'est la lecture d'un tiers, pas un énoncé de l'exchange. L'hypothèse d'un cas plus
+  étroit (le nouvel ordre posé quand l'annulation a échoué) n'est pas écartée.
+- **La lecture des PR** est passée par un outil de lecture qui résume : les citations rendues étaient littérales, mais le JSON
+  brut n'a pas été relu.
+
+**Ce que ça change pour le risque** — et il ne tient pas à l'adoption de l'ordre de position :
+
+- **Le réalignement d'aujourd'hui y est exposé.** Il passe par `batchModify` sur les ordres `reduceOnly` à déclencheur (stops et
+  take-profits de protection) et n'envoie jamais `a`. Si la règle était appliquée, chacun de ces `modify` serait refusé. La route
+  `position-protective/modify` n'a pas de repli et échouerait bruyamment.
+- **Ce que le réalignement fait d'un refus, depuis le 2026-10-27** (`smart-order.service.ts`, `placeBatchProtectiveOrders`). On
+  ignore quelle forme l'exchange emploierait ; trois sont possibles, lues dans le code, aucune observée :
+  - un refus **par ordre** dans une réponse `ok` (`statuses[i].error`) : inchangé. `Failed to modify order` dans le journal, puis
+    repli par annulation + recréation, avec la seconde sans protection que `batchModify` évitait. Ce repli a maintenant un test,
+    il n'en avait aucun ;
+  - une réponse qui n'est **pas un `ok`** — l'enveloppe `{ status: 'err', response }` en HTTP 200, `{}`, `null`, rien. _Avant_ : le
+    bloc sautait sans un mot, les annulations et les créations du même passage partaient, et le gateway rendait un compte rendu
+    d'apparence normale ; le bot lisait `protected` dès que ce compte rendu n'était pas vide, et ne signalait « rien appliqué »
+    que pour un plan fait seulement de modifications. _Maintenant_ : le refus est journalisé en erreur avec la réponse brute dès
+    qu'il arrive (`batchModify of N protective order(s) refused as a whole`), le plan continue, puis le gateway lève
+    `EXCHANGE_BATCH_MODIFY_REFUSED` en **422**, dont le message porte la réponse brute et ce que l'exchange a accepté du reste du
+    plan ;
+  - une erreur HTTP : l'exception remonte (`MAX_RETRIES = 1`, pas de relance), donc bruyante.
+- **Pourquoi le plan continue avant de lever.** Lever dès le refus laissait sans stop une position dont le stop manque et dont un
+  TP périmé est refusé : mesuré dans une copie jetable le 2026-10-27, l'ancien code posait le stop, une version qui lève d'emblée
+  ne le posait pas. Ce qui protège part d'abord, l'échec vient après.
+- **Pourquoi 422 et non 502.** Le bot lit une 5xx d'écriture comme `UNKNOWN_ORDER_STATE` et abandonne le passage de **toutes** les
+  paires (`nest-trading-bot`, `gateway-errors.ts`, `mustAbortPass`) ; une 4xx est une réponse claire, contenue à sa paire
+  (`Failed to realign protective orders`, paire `unprotected` avec la raison). Le gateway emploie déjà 422 pour ses refus clairs.
+  ⚠️ C'est un couplage avec la classification du bot : si elle change, ce choix devient faux sans qu'un test le dise (les tests
+  figent le numéro, pas la raison).
+- **Le signal précoce compte donc trois traces** : `Failed to modify order` (refus par ordre), `refused as a whole` dans le journal
+  du gateway, et, côté bot, `Failed to realign protective orders: EXCHANGE_BATCH_MODIFY_REFUSED`. Un `cancelled` non nul au retour
+  de `batch-protective` reste la trace du repli par ordre.
+
 - **`a: true` n'a pas été mesuré sur un stop, et n'est pas à activer sans mesure** : il poserait le nouvel ordre même si
-  l'ancien venait de se déclencher.
+  l'annulation avait échoué, par exemple parce que l'ancien venait de se déclencher. L'envoyer demanderait aussi les types
+  partagés (champ optionnel, **omis** quand il est faux : jamais `a: false`), le gateway, puis le bot — un changement qui traverse
+  les trois dépôts, à coordonner par un tag — et de savoir où la clé se place dans l'action signée (la signature hache l'action
+  sérialisée, l'ordre des clés peut compter : inféré, non vérifié dans notre code).
 - **`f: true` n'est pas utilisable pour annuler un stop ou un take-profit.** Si un chemin d'urgence veut un jour une annulation
   prioritaire, elle ne vaudra pas pour les ordres à déclencheur.
 
-C'est le cas inverse de celui qui a fait écrire ce document : ici la doc est précise et c'est la mesure qui la dément. Aucune des
-deux ne dispense de l'autre.
+⚠️ **Ce qui n'est toujours pas établi pour ce durcissement :**
+
+- **Le texte réel d'un refus** de `modify` sur un déclencheur : les tests emploient un libellé marqué « placeholder », que le code
+  ne lit pas. Que `err` veuille dire « rien n'a été modifié » est le sens du format, non mesuré pour un lot : le message dit
+  « not reported as applied » et demande de relire le carnet.
+- **Côté bot**, la réaction à un 422 est lue dans le code, pas exercée avec ce gateway, et le faux gateway du bot
+  (`gateway-contract.ts`) ne modélise pas ce refus.
+- **Pas de repli annulation + recréation pour un lot refusé en entier** : sa cause est inconnue, et ce repli ouvre une fenêtre sans
+  protection. À décider quand on connaîtra le texte réel du refus.
+- **Deux trous voisins, non traités** : un échec de l'annulation (réponse non `ok`) est seulement journalisé, et une création qui
+  reçoit une réponse non `ok` lève un `TypeError`. Le même mécanisme (consigner, finir, lever) pourrait les couvrir.
+- **Si une écriture suivante du même plan lève avant la fin**, le refus n'existe plus que dans le journal (un test le fige).
+
+C'est le cas inverse de celui qui a fait écrire ce document : ici la doc est précise et la mesure la dément **à la lettre** —
+probablement parce que la règle n'est pas encore appliquée. Aucune des deux ne dispense de l'autre.
 
 ## La règle qui précède les trois
 
