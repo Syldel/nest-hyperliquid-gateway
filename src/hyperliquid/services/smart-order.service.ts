@@ -602,7 +602,10 @@ export class SmartOrderService {
     return this.requireAcceptedOrder(response);
   }
 
-  /** Modifie un ordre de position existant. ⚠️ Ce que l'exchange en fait n'est pas mesuré. */
+  /**
+   * Modifie un ordre de position existant. Mesuré le 2026-10-27 : l'exchange le REMPLACE (l'ancien est annulé, un nouveau
+   * est créé à la même milliseconde) et l'oid CHANGE ; la réponse ne le donne pas, il se relit dans les ordres ouverts.
+   */
   async modifyPositionProtectiveOrder(
     oid: HLOid,
     params: PositionProtectiveParams,
@@ -664,8 +667,8 @@ export class SmartOrderService {
     const statuses = envelope?.data?.statuses;
 
     if (statuses === undefined) {
-      // L'accusé générique de l'exchange (`updateLeverage` répond ainsi). Jamais vu pour une modification : accepté parce
-      // que l'exchange dit `ok`, et le carnet qu'on relit ensuite dit ce qui en est.
+      // L'accusé générique de l'exchange (`updateLeverage` répond ainsi). MESURÉ le 2026-10-27 comme la réponse à la
+      // modification d'un stop de position : `{"status":"ok","response":{"type":"default"}}`, sans statut ni oid.
       if (envelope?.type === 'default') return response;
       throw this.unexpectedPositionLevelAnswer(raw);
     }

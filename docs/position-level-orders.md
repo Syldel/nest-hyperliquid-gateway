@@ -59,7 +59,7 @@ d'un paramètre privé de `SmartOrderService.marketTriggerLimitPx` a été élar
   glisse sur le graphique.
 - Le SDK Python officiel passe `grouping` tel quel ; le SDK Rust officiel écrit `"na"` en dur.
 
-## Mesuré le 2026-10-27 (phase 1, pas 1 : création)
+## Mesuré le 2026-10-27 (phase 1, pas 1 à 4 ; ETH, mainnet, un essai par pas)
 
 - **Notre action signée est acceptée.** Un stop de position créé par `POST /orders/position-protective` (ETH, long de 0,011,
   déclencheur 2310,5) est ouvert : `oid 587180894330`, `SELL`, `Stop Market`, `sz 0.0`, `reduceOnly true`,
@@ -80,15 +80,28 @@ d'un paramètre privé de `SmartOrderService.marketTriggerLimitPx` a été élar
   0,006 ; le stop `587180894330` est resté `open`, `sz 0.0`, `isPositionTpsl true`, **sans `siblingFilledCanceled`**. La
   fratrie vue le 2026-10-26 reliait deux ordres créés ensemble par l'interface ; elle n'a pas été observée entre deux ordres
   créés séparément. **Un seul stop, un seul take-profit, une seule mesure.**
+- **Pas 3 : `modify` est accepté, et l'exchange REMPLACE l'ordre.** Réponse brute (journal du gateway) :
+  `{"status":"ok","response":{"type":"default"}}`, l'accusé générique, sans statut ni oid. L'ancien stop (`587180894330`)
+  passe `canceled` à 1793099928800 ; le nouveau (`587193821618`) est créé à la **même milliseconde**, `sz 0.0` conservé, borne
+  recalculée (2081,8 pour 2313,0). Aucune fenêtre sans stop n'est visible. **L'oid change à chaque modification** : un oid
+  mémorisé est périmé, il se relit dans les ordres ouverts.
+- **Pas 4 : le stop créé par l'API ferme la position telle qu'elle est au déclenchement.** Modifié vers un déclencheur déjà
+  franchi (2319,0, marque 2314,6 ; nouvel oid `587194721203`), il a été exécuté environ 3 s plus tard : `Close Long 0.006 @
+  2314.5` — **0,006, la position restante**, et non 0,011, la position à sa création. Son `origSz` est passé de `0.0` à
+  `0.006` au déclenchement. Compte à plat, aucun ordre ouvert.
+- **Un déclencheur déjà franchi n'est pas exécuté à la milliseconde** : 3,03 s entre l'annulation de l'ancien stop
+  (11:20:24.026Z) et l'exécution du nouveau (11:20:27.058Z), horloge de l'exchange. Le take-profit ordinaire du pas 2 est
+  aussi apparu `resting` dans le listing qui a suivi son envoi : ce n'est pas propre aux ordres de position.
 - Latent, non touché : `placeProtectiveOrder` lit toujours `'error' in status` sans garde. Il ne reçoit aujourd'hui que des
   statuts-objets ; une chaîne (`waitingForFill` existe pour les enfants d'un `normalTpsl`) le ferait tomber de la même façon.
 
 ## ⚠️ Ce qui n'est pas mesuré
 
-- Ce que fait `modify` d'un ordre de position par l'API (l'interface le fait, par le graphique ; sa fenêtre, elle, annule puis
-  recrée).
 - Ce que **plusieurs** take-profit ordinaires font d'un stop de position (un seul a été mesuré, un escalier en a
   plusieurs), et ce qui se passe si un TP de position partage son groupe avec le stop.
+- Un stop créé **par l'API** devant une position qui **grandit** : mesuré par l'interface le 2026-10-26 (0,011 fermés pour un
+  stop posé sur 0,006), pas par l'API ; les pas 1 à 4 ont fait rétrécir la position.
+- Un autre actif qu'ETH, et plus d'un essai par pas.
 - Les chemins existants qui touchent des ordres du compte sans savoir qu'ils sont « de position » : `smart-order`
   (réalignement par `batchModify`) les traiterait comme les siens, avec une taille. Non observé, non modifié.
 

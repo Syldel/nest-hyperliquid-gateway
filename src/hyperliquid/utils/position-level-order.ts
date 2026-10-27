@@ -25,9 +25,15 @@ import type { DecimalString } from '@syldel/hl-shared-types';
  * ordinaires serait indiscernable d'une taille perdue en route. L'ordre de position a donc sa propre entrée, qui n'a
  * AUCUN champ de taille — il n'y a rien à perdre — et qui écrit le `"0"` du fil à un seul endroit.
  *
- * ⚠️ **Ce que l'API fait de cet ordre n'est pas mesuré** : que notre action signée soit acceptée ; ce que fait
- * `modify` ; et surtout ce qu'un take-profit ORDINAIRE qui s'exécute fait d'un stop de position (l'emporte-t-il en
- * fratrie ?). C'est la phase 1 du dépôt du bot (`scripts/live-check/position-stop-api.ts`).
+ * **Mesuré par ce gateway le 2026-10-27** (ETH, mainnet, un essai par pas) : notre action signée est acceptée ; un
+ * take-profit ORDINAIRE qui s'exécute n'emporte pas le stop de position ; `modify` le REMPLACE (nouvel oid, `sz 0.0`
+ * conservé) ; au déclenchement il ferme la position telle qu'elle est alors (0,006, après qu'un take-profit en eut pris
+ * 0,005). La réponse de création est la chaîne `"waitingForTrigger"`, celle d'une modification `{ type: "default" }` :
+ * **ni l'une ni l'autre ne donne l'oid**, qui ne se lit que dans les ordres ouverts.
+ *
+ * ⚠️ **Reste non mesuré** : plusieurs take-profit ordinaires (un escalier), un TP de position dans le groupe du stop, un
+ * stop créé par l'API devant une position qui grandit, un autre actif, et ce que fait le réalignement `batchModify` d'un
+ * tel ordre. Voir `docs/position-level-orders.md` ; la sonde est `scripts/live-check/position-stop-api.ts` (dépôt du bot).
  * ============================================================================
  */
 export interface PositionLevelOrder {

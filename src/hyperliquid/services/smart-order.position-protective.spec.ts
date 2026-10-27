@@ -166,9 +166,9 @@ describe('SmartOrderService — position-level protective orders', () => {
     ).rejects.toThrow('"type":"surprise"');
   });
 
-  // Jamais vue pour une modification : c'est notre règle, pas une mesure. L'accusé générique de l'exchange est accepté
-  // parce qu'il dit `ok`, et le carnet relu ensuite (la sonde le fait) dit ce qui en est.
-  it('accepts the generic ack of the exchange for a modification', async () => {
+  // MESURÉ le 2026-10-27, deux fois (journal du gateway) : c'est exactement la réponse de l'exchange à la modification d'un
+  // stop de position, sans statut d'ordre ni oid. Le nouvel oid ne se lit que dans les ordres ouverts.
+  it('accepts the generic ack the exchange answers to a modification, which carries no oid', async () => {
     const ack = { status: 'ok', response: { type: 'default' } };
     modifyPositionLevelOrder.mockResolvedValue(ack);
 

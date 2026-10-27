@@ -408,8 +408,9 @@ export class HyperliquidApiTradeService {
   }
 
   /**
-   * Modifie un ordre de position. ⚠️ Ce que l'exchange en fait n'est pas mesuré (l'application, elle, le fait en glissant
-   * l'ordre sur le graphique, mais sa fenêtre d'édition annule puis recrée).
+   * Modifie un ordre de position. Mesuré le 2026-10-27 : accepté, et l'exchange REMPLACE l'ordre (l'ancien est `canceled`, le
+   * nouveau est créé à la même milliseconde, `sz 0.0` conservé) : l'oid change, et la réponse (`type: "default"`) ne le donne
+   * pas.
    */
   async modifyPositionLevelOrder(
     oid: HLOid,
