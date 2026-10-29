@@ -5,6 +5,9 @@
   "author": "Syldel",
   "private": true,
   "license": "UNLICENSED",
+  "engines": {
+    "node": ">=24.22.1 <25"
+  },
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -43,7 +46,7 @@
     "@nestjs/testing": "^11.1.16",
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
-    "@types/node": "^22.19.15",
+    "@types/node": "^24.19.2",
     "@types/supertest": "^6.0.3",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
