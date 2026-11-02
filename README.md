@@ -86,9 +86,18 @@ https://app.hyperliquid.xyz/API
 ```env
 JWT_USER_SECRET=
 JWT_SERVICE_SECRET=
-AGENT_ENCRYPTION_SECRET=
+AGENT_ENCRYPTION_KEYS=2026-11:<64 hex>
 NEST_USER_SERVICE_URL=http://localhost:3001
 ```
+
+`AGENT_ENCRYPTION_KEYS` est le trousseau des clés maîtresses qui ouvrent les clés d'agent,
+`kid:hex64` séparés par des virgules. Chaque clé d'agent est un JWE scellé par `set-agent-key`
+(nest-mongo-user) sous un `kid` et pour un utilisateur (`hl-agent-key:<userId>`) : un `kid`
+absent du trousseau, ou une clé recopiée sur un autre utilisateur, est refusé en le nommant.
+Le trousseau est validé au démarrage, qui échoue s'il est absent ou malformé
+(`@syldel/crypto-utils` ≥ 2.0.0, `JweUtil`). Pour changer de clé maîtresse : ajouter la
+nouvelle au trousseau et redémarrer, relancer `set-agent-key` avec le nouveau `kid`, puis
+retirer l'ancienne.
 
 ## API using
 
