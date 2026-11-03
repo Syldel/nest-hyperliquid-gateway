@@ -57,7 +57,7 @@ describe('UserClient', () => {
 
   beforeEach(() => {
     process.env = { ...OLD_ENV };
-    process.env.JWT_SERVICE_SECRET = 'service-secret';
+    process.env.JWT_SERVICE_SECRET = 'b2'.repeat(32);
     process.env.NEST_USER_SERVICE_URL = 'http://user-service';
     fetchMock = jest.fn();
     global.fetch = fetchMock;
