@@ -2,6 +2,7 @@ import { Logger, UnauthorizedException } from '@nestjs/common';
 import { PureJwtUtil } from '@syldel/crypto-utils';
 import { InternalSyncController } from './internal-sync.controller';
 import { UserClient } from './user-client.service';
+import { JwtSecrets } from './jwt-secret';
 
 const SECRET = 'd4'.repeat(32);
 const now = () => Math.floor(Date.now() / 1000);
@@ -16,35 +17,29 @@ const webhookToken = (claims: Record<string, unknown> = {}) =>
 function controller(
   refreshExistingCache = jest.fn().mockResolvedValue(undefined),
 ) {
-  const c = new InternalSyncController({
-    refreshExistingCache,
-  } as unknown as UserClient);
-  c.onModuleInit();
+  const secrets = new JwtSecrets();
+  secrets.onModuleInit();
+  const c = new InternalSyncController(
+    { refreshExistingCache } as unknown as UserClient,
+    secrets,
+  );
   return { controller: c, refreshExistingCache };
 }
 
 describe('InternalSyncController', () => {
   const OLD_ENV = process.env;
   beforeEach(() => {
-    process.env = { ...OLD_ENV, JWT_SERVICE_SECRET: SECRET };
+    process.env = {
+      ...OLD_ENV,
+      JWT_SERVICE_SECRET: SECRET,
+      JWT_USER_SECRET: 'c3'.repeat(32),
+    };
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
   });
   afterEach(() => {
     process.env = OLD_ENV;
     jest.restoreAllMocks();
-  });
-
-  it.each([
-    ['missing', undefined],
-    ['not 64 hex characters', 'super-secret-service'],
-  ])('should refuse to start with a %s secret', (_label, secret) => {
-    if (secret === undefined) delete process.env.JWT_SERVICE_SECRET;
-    else process.env.JWT_SERVICE_SECRET = secret;
-    const c = new InternalSyncController({} as UserClient);
-    expect(() => c.onModuleInit()).toThrow(
-      'JWT_SERVICE_SECRET must be 64 hex characters',
-    );
   });
 
   it('should refresh the cache on the webhook of nest-mongo-user', async () => {

@@ -4,38 +4,19 @@ import {
   UnauthorizedException,
   Headers,
   Logger,
-  OnModuleInit,
 } from '@nestjs/common';
 import { PureJwtUtil } from '@syldel/crypto-utils';
 import { InternalJwtPayload } from './internal-payload.interface';
 import { UserClient } from './user-client.service';
-
-/** La forme qu'exige PureJwtUtil depuis crypto-utils 3.0.0. */
-const SECRET_PATTERN = /^[0-9a-fA-F]{64}$/;
+import { JwtSecrets } from './jwt-secret';
 
 @Controller('internal')
-export class InternalSyncController implements OnModuleInit {
+export class InternalSyncController {
   private readonly logger = new Logger(InternalSyncController.name);
-  private jwtSecret!: string;
-
-  constructor(private readonly userClient: UserClient) {}
-
-  /**
-   * Le secret se lit et se valide au démarrage : il était relu à chaque
-   * requête (`process.env.JWT_SERVICE_SECRET!`), et un secret absent ne se
-   * découvrait qu'au premier webhook, en 401. Dans `onModuleInit` et non le
-   * constructeur, comme UserClient : le `.env` n'est chargé que par le
-   * constructeur de HyperliquidConfigService.
-   */
-  onModuleInit(): void {
-    const secret = process.env.JWT_SERVICE_SECRET;
-    if (!secret || !SECRET_PATTERN.test(secret)) {
-      throw new Error(
-        `JWT_SERVICE_SECRET must be 64 hex characters, got ${secret ? `${secret.length} characters` : 'nothing'}`,
-      );
-    }
-    this.jwtSecret = secret;
-  }
+  constructor(
+    private readonly userClient: UserClient,
+    private readonly secrets: JwtSecrets,
+  ) {}
 
   /**
    * Seul nest-mongo-user appelle cette route, par son webhook, après une
@@ -61,12 +42,15 @@ export class InternalSyncController implements OnModuleInit {
       );
     }
 
+    // Hors du `try` : un secret non chargé est une erreur du serveur, pas un
+    // jeton invalide.
+    const secret = this.secrets.serviceSecret;
     let payload: InternalJwtPayload;
     try {
       // Signature, algorithme et `exp` s'il est présent.
       payload = PureJwtUtil.verify<InternalJwtPayload>(
         auth.split(' ')[1],
-        this.jwtSecret,
+        secret,
       );
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
