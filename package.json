@@ -82,5 +82,8 @@
     "transformIgnorePatterns": [
       "node_modules/(?!(?:\\.pnpm/)?(@noble)/)"
     ]
+  },
+  "allowScripts": {
+    "unrs-resolver": false
   }
 }
