@@ -4,16 +4,33 @@ import {
   Logger,
   NotFoundException,
   OnModuleInit,
+  PreconditionFailedException,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { JweKeyring, JweUtil, PureJwtUtil } from '@syldel/crypto-utils';
-import { agentKeyContext, SESSION_KID, sessionContext } from './agent-key';
+import {
+  AgentInfo,
+  agentKeyContext,
+  readAgentInfo,
+  SESSION_KID,
+  sessionContext,
+} from './agent-key';
+
+/** Ce qu'il faut pour signer : la clé en clair, et l'agent déclaré avec elle. */
+export interface AgentCredentials {
+  privateKey: string;
+  agent: AgentInfo;
+}
 
 @Injectable()
 export class UserClient implements OnModuleInit {
   private readonly logger = new Logger(UserClient.name);
-  // Chaque entrée est un JWE scellé sous la clé de session, jamais le clair.
-  private readonly keyCache = new Map<string, string>();
+  // La clé y est un JWE scellé sous la clé de session, jamais le clair ;
+  // l'agent, public, l'accompagne tel quel.
+  private readonly keyCache = new Map<
+    string,
+    { sealed: string; agent: AgentInfo }
+  >();
   private readonly cacheTimers = new Map<string, NodeJS.Timeout>();
 
   // Clé de session unique générée à chaque démarrage du serveur
@@ -40,45 +57,59 @@ export class UserClient implements OnModuleInit {
     );
   }
 
-  async getDecryptedAgentKey(userId: string): Promise<string> {
+  /**
+   * La clé et son agent. L'expiration n'est **pas** contrôlée ici : elle
+   * dépend de l'instant, et une entrée du cache vit sept jours. L'appelant
+   * qui signe la contrôle à chaque fois (`agentRefusal`).
+   */
+  async getAgentCredentials(userId: string): Promise<AgentCredentials> {
     const cached = this.keyCache.get(userId);
     if (cached) {
-      return JweUtil.open(cached, {
-        keys: this.sessionKeys,
-        context: sessionContext(userId),
-      });
+      return {
+        privateKey: JweUtil.open(cached.sealed, {
+          keys: this.sessionKeys,
+          context: sessionContext(userId),
+        }),
+        agent: cached.agent,
+      };
     }
 
-    const decryptedKey = await this.fetchAndDecryptKey(userId);
+    const credentials = await this.fetchCredentials(userId);
 
-    this.storeInCache(userId, decryptedKey);
+    this.storeInCache(userId, credentials);
 
-    return decryptedKey;
+    return credentials;
   }
 
-  private storeInCache(userId: string, decryptedKey: string) {
+  private storeInCache(
+    userId: string,
+    { privateKey, agent }: AgentCredentials,
+  ) {
     if (this.cacheTimers.has(userId)) {
       clearTimeout(this.cacheTimers.get(userId));
     }
 
-    const sealed = JweUtil.seal(decryptedKey, {
+    const sealed = JweUtil.seal(privateKey, {
       kid: SESSION_KID,
       key: this.sessionKeys[SESSION_KID],
       context: sessionContext(userId),
     });
 
-    this.keyCache.set(userId, sealed);
+    this.keyCache.set(userId, { sealed, agent });
 
-    const timer = setTimeout(() => {
-      this.keyCache.delete(userId);
-      this.cacheTimers.delete(userId);
-    }, this.TTL_SYNC);
+    const timer = setTimeout(() => this.evict(userId), this.TTL_SYNC);
 
     timer.unref();
     this.cacheTimers.set(userId, timer);
   }
 
-  private async fetchAndDecryptKey(userId: string): Promise<string> {
+  private evict(userId: string) {
+    clearTimeout(this.cacheTimers.get(userId));
+    this.keyCache.delete(userId);
+    this.cacheTimers.delete(userId);
+  }
+
+  private async fetchCredentials(userId: string): Promise<AgentCredentials> {
     const serviceSecret = process.env.JWT_SERVICE_SECRET!;
     const userServiceUrl = process.env.NEST_USER_SERVICE_URL!;
 
@@ -114,21 +145,45 @@ export class UserClient implements OnModuleInit {
       );
     }
 
-    const { agentKey } = (await response.json()) as { agentKey?: unknown };
-    if (typeof agentKey !== 'string') {
+    const body = (await response.json()) as {
+      agentKey?: unknown;
+      agent?: unknown;
+    };
+    if (typeof body.agentKey !== 'string') {
       throw new InternalServerErrorException(
         'User service answered without an agent key string',
       );
     }
 
+    // L'agent avant la clé : sans expiration déclarée, on refuse sans même
+    // ouvrir la clé. `agent` absent de la réponse (un nest-mongo-user plus
+    // ancien) n'est pas `null` : c'est une réponse inattendue, nommée telle.
+    let agent: AgentInfo | null;
+    try {
+      agent = readAgentInfo(body.agent);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new InternalServerErrorException(message);
+    }
+    if (agent === null) {
+      this.logger.warn(
+        `Agent key of user ${userId} refused: no declared expiry or address`,
+      );
+      throw new PreconditionFailedException(
+        'The agent key has no declared expiry or address: run set-agent-key again',
+      );
+    }
+    const agentKey = body.agentKey;
+
     // Les erreurs de JweUtil ne contiennent aucun secret et nomment la cause
     // (clé inconnue, contexte d'un autre utilisateur…) : Nest les aurait
     // réduites à « Internal server error ».
     try {
-      return JweUtil.open(agentKey, {
+      const privateKey = JweUtil.open(agentKey, {
         keys: this.masterKeys,
         context: agentKeyContext(userId),
       });
+      return { privateKey, agent };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Agent key of user ${userId} not opened: ${message}`);
@@ -164,8 +219,20 @@ export class UserClient implements OnModuleInit {
     // entre temps dans la DB du service User.
     const results = await Promise.allSettled(
       userIds.map(async (userId) => {
-        const decryptedKey = await this.fetchAndDecryptKey(userId);
-        this.storeInCache(userId, decryptedKey);
+        try {
+          this.storeInCache(userId, await this.fetchCredentials(userId));
+        } catch (error) {
+          // L'ancienne entrée ne survit pas à un rafraîchissement refusé : une
+          // clé retirée ou remplacée en base ne doit plus signer. Le prochain
+          // ordre relira la base et échouera en nommant la cause.
+          this.evict(userId);
+          const message =
+            error instanceof Error ? error.message : String(error);
+          this.logger.warn(
+            `Agent key of user ${userId} dropped from the cache: ${message}`,
+          );
+          throw error;
+        }
       }),
     );
 

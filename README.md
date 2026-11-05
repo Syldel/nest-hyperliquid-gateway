@@ -99,6 +99,24 @@ Le trousseau est validé au démarrage, qui échoue s'il est absent ou malformé
 nouvelle au trousseau et redémarrer, relancer `set-agent-key` avec le nouveau `kid`, puis
 retirer l'ancienne.
 
+### L'agent qui signe : refusé avant toute signature
+
+Depuis le 2026-11-05, `agent-credentials` (nest-mongo-user) sert avec la clé les données
+publiques de l'agent : adresse, nom, expiration (`validUntil`), déclarées par `set-agent-key`
+(voir `nest-mongo-user/docs/agent-key.md`). `executeWithNonce`, par où passe toute action
+`/exchange`, refuse de signer en **HTTP 412**, avant tout nonce, signature ou requête :
+
+- sans données d'agent (une clé enregistrée avant ce changement) : relancer `set-agent-key` ;
+- quand l'adresse de la clé déchiffrée n'est pas l'adresse déclarée ;
+- à partir de l'instant `validUntil`, contrôlé à chaque action et non au chargement : une
+  entrée du cache vit sept jours.
+
+Chaque réponse `status: "err"` de l'exchange est journalisée avec l'adresse et le nom de
+l'agent qui a signé, et le texte de la réponse (tronqué à 300 caractères) ; jamais la
+requête. Un rafraîchissement du cache refusé (`/internal/sync`) **vide** l'entrée au lieu de
+garder l'ancienne clé. `approveAgent`, qui signait avec la clé d'agent alors que Hyperliquid
+exige le wallet maître, a été retiré.
+
 ## API using
 
 ### curl JSON pretty-print

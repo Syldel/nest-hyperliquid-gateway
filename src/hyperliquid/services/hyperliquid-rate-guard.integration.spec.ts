@@ -85,15 +85,30 @@ describe('garde-fou branché', () => {
   });
 
   describe('actions /exchange', () => {
+    const AGENT_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
     const trade = () =>
       new HyperliquidApiTradeService(
         { userId: 'u-1' } as never,
-        { getDecryptedAgentKey: jest.fn().mockResolvedValue('0xkey') } as never,
+        {
+          getAgentCredentials: jest.fn().mockResolvedValue({
+            privateKey: '0xkey',
+            agent: {
+              address: AGENT_ADDRESS,
+              name: 'bot_main',
+              validUntil: new Date(Date.now() + 86_400_000),
+              keyUpdatedAt: new Date(),
+            },
+          }),
+        } as never,
         { getTimestamp: jest.fn().mockReturnValue(1) } as never,
         {} as never,
         {} as never,
         { signL1Action: jest.fn().mockResolvedValue('0xsig') } as never,
-        { createFromPrivateKey: jest.fn().mockReturnValue({}) } as never,
+        {
+          createFromPrivateKey: jest
+            .fn()
+            .mockReturnValue({ address: AGENT_ADDRESS }),
+        } as never,
         guard,
       );
     /** `executeWithNonce` est privée : on l'atteint sans passer par `any`. */

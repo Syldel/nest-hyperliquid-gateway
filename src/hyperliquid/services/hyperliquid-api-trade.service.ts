@@ -1,4 +1,9 @@
-import { HttpException, Injectable } from '@nestjs/common';
+import {
+  HttpException,
+  Injectable,
+  Logger,
+  PreconditionFailedException,
+} from '@nestjs/common';
 
 import {
   HLOrderDetails,
@@ -9,7 +14,6 @@ import {
   HLTwapOrderAction,
   HLTwapCancelAction,
   HLReserveRequestWeightAction,
-  HLApproveAgentAction,
   HLApproveBuilderFeeAction,
   HLCDepositAction,
   HLCWithdrawAction,
@@ -36,6 +40,7 @@ import { SigningService } from '../../crypto/services/signing.service';
 import { WalletService } from '../../crypto/services/wallet.service';
 import { UserContextService } from '../../auth/user-context.service';
 import { UserClient } from '../../auth/user-client.service';
+import { agentRefusal } from '../../auth/agent-key';
 import {
   exchangeRequestWeight,
   HyperliquidRateGuardService,
@@ -50,6 +55,7 @@ import {
 
 @Injectable()
 export class HyperliquidApiTradeService {
+  private readonly logger = new Logger(HyperliquidApiTradeService.name);
   private readonly API_URL = 'https://api.hyperliquid.xyz';
   private readonly TESTNET_API_URL = 'https://testnet.hyperliquid.xyz';
   private readonly MAX_RETRIES = 1;
@@ -81,11 +87,20 @@ export class HyperliquidApiTradeService {
     let nonce: number | undefined;
     let lastError: unknown;
 
-    const privateKey = await this.userClient.getDecryptedAgentKey(
+    const { privateKey, agent } = await this.userClient.getAgentCredentials(
       this.userContext.userId,
     );
 
     const wallet = this.walletService.createFromPrivateKey(privateKey);
+
+    // Avant tout nonce et toute signature : un agent expiré ou une clé qui
+    // n'est pas celle de l'agent déclaré ne signe rien. Contrôlé à chaque
+    // action, pas au chargement : l'entrée du cache vit sept jours.
+    const refusal = agentRefusal(agent, wallet.address, Date.now());
+    if (refusal) {
+      this.logger.warn(`Exchange ${action.type} not signed: ${refusal}`);
+      throw new PreconditionFailedException(refusal);
+    }
 
     // L'autre point de sortie vers Hyperliquid, avec `executeInfo`. Les ordres
     // ne sont jamais freinés par le plafond local, seulement par une pause
@@ -164,6 +179,16 @@ export class HyperliquidApiTradeService {
           status?: string;
           response?: unknown;
         };
+        // Tout refus de l'exchange s'écrit, avec l'agent qui a signé : un
+        // agent inconnu de Hyperliquid (expiré, retiré) ne se reconnaissait
+        // qu'à ce texte, et rien n'en restait dans le journal (2026-10-27 et
+        // 2026-10-29). Jamais la requête : seulement le type, l'adresse
+        // publique de l'agent et le texte de la réponse.
+        if (reply?.status === 'err') {
+          this.logger.warn(
+            `Exchange refused ${action.type} signed by agent ${agent.address} ("${agent.name}"): ${describeReply(reply.response)}`,
+          );
+        }
         if (
           reply?.status === 'err' &&
           isAddressRateLimitMessage(reply.response)
@@ -780,33 +805,6 @@ export class HyperliquidApiTradeService {
   }
 
   /**
-   * Approuve un wallet API.
-   */
-  async approveAgent(
-    signatureChainId: string,
-    agentAddress: string,
-    agentName?: string,
-    isTestnet: boolean = false,
-  ): Promise<HLSuccessResponse> {
-    const hyperliquidChain = isTestnet ? 'Testnet' : 'Mainnet';
-    const nonce = this.nonceManager.getTimestamp();
-    const action: HLApproveAgentAction = {
-      type: 'approveAgent',
-      hyperliquidChain,
-      signatureChainId,
-      agentAddress,
-      agentName,
-      nonce,
-    };
-
-    const result = await this.executeWithNonce<
-      HLApproveAgentAction,
-      HLSuccessResponse
-    >('exchange', action, isTestnet);
-    return result;
-  }
-
-  /**
    * Approuve un frais de builder.
    */
   async approveBuilderFee(
@@ -855,4 +853,11 @@ export class HyperliquidApiTradeService {
       isTestnet,
     );
   }
+}
+
+/** Le texte d'un refus pour le journal, borné : il vient de l'exchange. */
+function describeReply(response: unknown): string {
+  const text =
+    typeof response === 'string' ? response : (JSON.stringify(response) ?? '');
+  return text.length > 300 ? `${text.slice(0, 300)}…` : text;
 }

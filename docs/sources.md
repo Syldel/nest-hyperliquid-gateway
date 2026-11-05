@@ -253,9 +253,10 @@ ordinaire `/hyperliquid/order/modify`, celle de l'application mobile, et non la 
   de position, pas 3).
 - **Un `modify` d'un oid déjà annulé** : HTTP 200, `{"status":"err","response":"Cannot modify canceled or filled order"}`. Rien
   n'a été créé : `order-status` inchangé, compte inchangé (24,46985682 USDC avant et après, ni position ni ordre).
-- **Le gateway n'écrit rien** pour ces refus. Il relaie l'enveloppe `err` brute en HTTP 200 (seul un refus de débit par adresse
-  devient une exception, `executeWithNonce`), et son journal ne contient que les lignes de démarrage. `Failed to modify order` ne
-  se déclenche donc pas ici : cette trace ne couvre que les refus **par ordre** d'un `batchModify`.
+- **Le gateway n'écrivait rien** pour ces refus (corrigé le 2026-11-05). Il relaie l'enveloppe `err` brute en HTTP 200 (seul un
+  refus de débit par adresse devient une exception, `executeWithNonce`), et son journal ne contenait que les lignes de démarrage.
+  `Failed to modify order` ne se déclenche pas ici : cette trace ne couvre que les refus **par ordre** d'un `batchModify`. Depuis,
+  `executeWithNonce` journalise chaque `status: "err"` avec l'agent qui a signé (voir le README, « L'agent qui signe »).
 
 **Ce que ça change.**
 
