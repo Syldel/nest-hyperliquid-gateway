@@ -96,7 +96,12 @@ export class HyperliquidApiTradeService {
     // Avant tout nonce et toute signature : un agent expiré ou une clé qui
     // n'est pas celle de l'agent déclaré ne signe rien. Contrôlé à chaque
     // action, pas au chargement : l'entrée du cache vit sept jours.
-    const refusal = agentRefusal(agent, wallet.address, Date.now());
+    const refusal = agentRefusal(
+      agent,
+      wallet.address,
+      this.userContext.walletAddress,
+      Date.now(),
+    );
     if (refusal) {
       this.logger.warn(`Exchange ${action.type} not signed: ${refusal}`);
       throw new PreconditionFailedException(refusal);

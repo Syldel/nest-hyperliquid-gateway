@@ -88,7 +88,10 @@ describe('garde-fou branché', () => {
     const AGENT_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
     const trade = () =>
       new HyperliquidApiTradeService(
-        { userId: 'u-1' } as never,
+        {
+          userId: 'u-1',
+          walletAddress: '0x1111111111111111111111111111111111111111',
+        } as never,
         {
           getAgentCredentials: jest.fn().mockResolvedValue({
             privateKey: '0xkey',

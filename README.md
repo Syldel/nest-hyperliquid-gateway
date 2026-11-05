@@ -106,6 +106,8 @@ publiques de l'agent : adresse, nom, expiration (`validUntil`), déclarées par 
 (voir `nest-mongo-user/docs/agent-key.md`). `executeWithNonce`, par où passe toute action
 `/exchange`, refuse de signer en **HTTP 412**, avant tout nonce, signature ou requête :
 
+- quand la clé est celle du **wallet maître** de l'utilisateur, ou sans wallet connecté à
+  comparer : elle signerait avec des pouvoirs qu'un agent n'a pas (retraits, transferts) ;
 - sans données d'agent (une clé enregistrée avant ce changement) : relancer `set-agent-key` ;
 - quand l'adresse de la clé déchiffrée n'est pas l'adresse déclarée ;
 - à partir de l'instant `validUntil`, contrôlé à chaque action et non au chargement : une
@@ -115,7 +117,9 @@ Chaque réponse `status: "err"` de l'exchange est journalisée avec l'adresse et
 l'agent qui a signé, et le texte de la réponse (tronqué à 300 caractères) ; jamais la
 requête. Un rafraîchissement du cache refusé (`/internal/sync`) **vide** l'entrée au lieu de
 garder l'ancienne clé. `approveAgent`, qui signait avec la clé d'agent alors que Hyperliquid
-exige le wallet maître, a été retiré.
+exige le wallet maître, a été retiré. `WalletService` ne garde plus le dernier `Wallet`
+construit : jusqu'au 2026-11-05, ce singleton laissait la clé en clair en mémoire jusqu'à
+l'arrêt du gateway, au-delà de toute rotation.
 
 ## API using
 

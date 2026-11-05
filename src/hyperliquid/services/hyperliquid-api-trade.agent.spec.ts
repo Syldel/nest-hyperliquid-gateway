@@ -45,7 +45,10 @@ describe('HyperliquidApiTradeService — the signing agent', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
-  function serviceWith(agent: Partial<AgentInfo>) {
+  function serviceWith(
+    agent: Partial<AgentInfo>,
+    masterWallet = '0x1111111111111111111111111111111111111111',
+  ) {
     const declared: AgentInfo = {
       address: ADDRESS,
       name: 'bot_main',
@@ -54,7 +57,7 @@ describe('HyperliquidApiTradeService — the signing agent', () => {
       ...agent,
     };
     return new HyperliquidApiTradeService(
-      { userId: 'u-1' } as never,
+      { userId: 'u-1', walletAddress: masterWallet } as never,
       {
         getAgentCredentials: jest
           .fn()
@@ -97,6 +100,21 @@ describe('HyperliquidApiTradeService — the signing agent', () => {
       /^The agent "bot_main" \(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266\) expired on /,
     );
     expect(getTimestamp).not.toHaveBeenCalled();
+    expect(signL1Action).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  // La clé du wallet maître stockée comme agent : jamais signée, même déclarée
+  // et valide.
+  it('should refuse to sign with the master wallet key', async () => {
+    const error = await send(serviceWith({}, ADDRESS.toLowerCase())).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(PreconditionFailedException);
+    expect((error as Error).message).toMatch(
+      /^The stored agent key is the master wallet /,
+    );
     expect(signL1Action).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });

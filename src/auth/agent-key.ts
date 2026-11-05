@@ -69,6 +69,10 @@ export function readAgentInfo(raw: unknown): AgentInfo | null {
 /**
  * Pourquoi cet agent ne doit pas signer, ou `null` s'il le peut.
  *
+ * - la clé ne doit pas être celle du **wallet maître** de l'utilisateur :
+ *   collée par erreur dans `set-agent-key` (qui la refuse depuis le
+ *   2026-11-05) ou écrite à la main en base, elle signerait avec des pouvoirs
+ *   qu'un agent n'a pas (retraits, transferts). Sans wallet connu, on refuse ;
  * - l'adresse de la clé déchiffrée doit être celle déclarée : sinon la clé et
  *   ses données ne vont pas ensemble (base modifiée à la main, écriture
  *   partielle), et l'expiration affichée serait celle d'un autre agent ;
@@ -80,8 +84,15 @@ export function readAgentInfo(raw: unknown): AgentInfo | null {
 export function agentRefusal(
   agent: AgentInfo,
   keyAddress: string,
+  masterWallet: string | undefined,
   now: number,
 ): string | null {
+  if (!masterWallet) {
+    return 'No signed-in wallet to check the agent key against: nothing signed';
+  }
+  if (keyAddress.toLowerCase() === masterWallet.toLowerCase()) {
+    return `The stored agent key is the master wallet ${masterWallet} itself, not an API wallet: run set-agent-key with an API wallet key`;
+  }
   if (keyAddress.toLowerCase() !== agent.address.toLowerCase()) {
     return `The agent key belongs to ${keyAddress}, not to the declared agent ${agent.address} ("${agent.name}"): run set-agent-key again`;
   }
