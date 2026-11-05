@@ -278,6 +278,32 @@ ordinaire `/hyperliquid/order/modify`, celle de l'application mobile, et non la 
   `position-protective/modify`, pas de `/hyperliquid/order/modify`. Et la forme `ok` avec `statuses[i].error` pour un `modify`
   seul n'a jamais été observée.
 
+### Deux niveaux de refus : l'action, puis l'ordre (mesuré le 2026-11-05)
+
+**La forme `ok` avec `statuses[i].error` existe bien, observée une fois, sur un `order`** (route ordinaire
+`/hyperliquid/order`, mainnet, compte `rabby_01`, gateway `123ab37`). Un ALO d'achat BTC de 12,33 $, sur un compte dont la
+marge était presque entièrement retenue par une position ETH :
+
+```text
+{"status":"ok","response":{"type":"order","data":{"statuses":[{"error":"Insufficient margin to place order. asset=0"}]}}}
+```
+
+Avec les mesures précédentes, les deux niveaux se distinguent :
+
+| niveau           | forme                                       | observé                                                                         |
+| ---------------- | ------------------------------------------- | ------------------------------------------------------------------------------- |
+| l'action entière | `{"status":"err","response":"<chaîne>"}`    | agent inconnu ou expiré (2026-10-29), `modify` refusé (2026-10-27, deux motifs) |
+| un ordre         | `ok`, puis `statuses[i].error` (une chaîne) | marge insuffisante (2026-11-05)                                                 |
+
+**Ce que ça établit pour la signature** : une réponse `ok`, même portant une erreur par ordre, veut dire que l'exchange a reconnu
+le signataire. C'est ainsi que la première signature de l'agent `winter_26-27_key` a été prouvée sans rien poser.
+
+**Ce que le gateway en écrit** : le premier niveau est journalisé avec l'agent qui a signé (`executeWithNonce`, depuis le
+2026-11-05) ; le second ne l'est pas sur cette route, il revient tel quel à l'appelant. Le déroulé :
+`nest-trading-bot/docs/hyperliquid/live-check.md`, « L'agent expiré, puis la première signature du nouveau ».
+
+⚠️ Un seul cas, un seul motif, et sur `order` : la forme par ordre d'un `modify` seul reste non observée.
+
 ### Ce que le canal d'annonces dit (messages 306 à 384 relevés le 2026-10-27, ceux qui nous concernent ci-dessous)
 
 **Le statut de ce relevé : un miroir tiers.** Le canal Telegram `hyperliquid_api` (« Hyperliquid API Announcements », 2 878
