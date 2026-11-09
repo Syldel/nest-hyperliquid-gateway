@@ -95,6 +95,13 @@ respecter :
 - **le délai d'une écriture côté client doit dépasser la durée maximale d'un ordre
   instantané ici** : `SmartOrderService.instantOrder` fait jusqu'à 6 tentatives espacées de
   7,5 s, puis suit le statut jusqu'à 45 s — environ **100 s** au pire. Le bot attend 180 s.
+- **les relances d'un ordre instantané sont bornées ici, pas chez le client** (depuis le
+  2026-11-09, `INSTANT_ORDER_LIMITS`) : `maxRetries` de 1 à 6, `delayMs` de 1 à 15 s, entiers,
+  sinon 400. Avant, `@IsNumber()` seul laissait demander un million de tentatives sans attente ;
+  comme ce garde ne freine jamais les ordres, seule la lecture du marché faite à chaque tentative
+  arrêtait la boucle au plafond des lectures, après environ 45 ordres. 15 s au plus pour que le
+  pire cas (6 × 15 + 45 = 135 s) reste sous les 180 s du bot. Le service borne aussi le nombre
+  de tentatives d'un appel interne, qui n'a pas de DTO.
 
 ## ⚠️ Ce qui n'est pas vérifié, et les limites connues
 

@@ -244,6 +244,41 @@ describe('SmartOrderService', () => {
       expect(placeOrderSpy).toHaveBeenCalledTimes(1);
       expect(waitOrderSpy).not.toHaveBeenCalled();
     });
+
+    // Le DTO borne une requête HTTP ; un appel interne n'en a pas. Sans cette borne, un refus post-only répété faisait
+    // partir autant d'ordres qu'on en demandait (voir `INSTANT_ORDER_LIMITS`).
+    it('never places more than six orders, whatever number of retries it is asked for', async () => {
+      (
+        publicInfoService.getPerpMarketsWithPrices as jest.Mock
+      ).mockResolvedValue([{ name: 'BTC', markPrice: '50000', szDecimals: 8 }]);
+      // Le texte de refus post-only mesuré le 2026-11-09 (`docs/sources.md`), sans le préfixe propre au `modify`.
+      placeOrderSpy.mockResolvedValue({
+        status: 'ok',
+        response: {
+          type: 'order',
+          data: {
+            statuses: [
+              {
+                error:
+                  'Post only order would have immediately matched, bbo was 74940@74941.',
+              },
+            ],
+          },
+        },
+      });
+
+      await expect(
+        service.instantOrder({
+          assetName: 'BTC',
+          isBuy: true,
+          size: { type: 'base', sz: '0.01' },
+          maxRetries: 1_000_000,
+          delayMs: 0,
+        }),
+      ).rejects.toBeDefined();
+
+      expect(placeOrderSpy).toHaveBeenCalledTimes(6);
+    });
   });
 
   describe('waitForOrderFinalStatus', () => {

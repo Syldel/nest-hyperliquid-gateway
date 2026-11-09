@@ -37,6 +37,7 @@ import { ValueFormatterService } from './value-formatter.service';
 import { HyperliquidGatewayException } from '../exceptions/hyperliquid-gateway.exception';
 import { HyperliquidCollateralService } from './hyperliquid-collateral.service';
 import { PositionLevelOrder } from '../utils/position-level-order';
+import { INSTANT_ORDER_LIMITS } from '../dtos/instant-order.dtos';
 
 /**
  * Un TP/SL « de position » ne porte ni taille ni choix de forme : de quoi dire où et dans quel sens. Voir
@@ -145,13 +146,16 @@ export class SmartOrderService {
       tif = 'Alo',
       reduceOnly = false,
       isTestnet = false,
-      maxRetries = 6,
-      delayMs = 7500,
+      // Les bornes et leurs raisons : `INSTANT_ORDER_LIMITS`. Le DTO refuse ce qui en sort ; un appel interne n'a pas
+      // de DTO, d'où aussi la borne de la boucle plus bas.
+      maxRetries = INSTANT_ORDER_LIMITS.maxRetries,
+      delayMs = INSTANT_ORDER_LIMITS.defaultDelayMs,
     } = params;
 
     let attempt = 0;
+    const attempts = Math.min(maxRetries, INSTANT_ORDER_LIMITS.maxRetries);
 
-    while (attempt < maxRetries) {
+    while (attempt < attempts) {
       attempt++;
 
       const dex = this.assetRegistry.getDexForAsset(assetName);
