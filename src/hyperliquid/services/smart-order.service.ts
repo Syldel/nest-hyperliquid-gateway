@@ -19,6 +19,7 @@ import {
   HLPerpMarketExtended,
   HLPlaceOrderResponse,
   HLProtectiveKind,
+  HLSuccessResponse,
   HLTif,
   InstantOrderParams,
   NormalizedProtectiveOrder,
@@ -216,7 +217,7 @@ export class SmartOrderService {
         isTestnet,
       });
 
-      const decision = this.shouldRetryOrder(order.response);
+      const decision = this.shouldRetryOrder(this.requireOrderStatuses(order));
       if (decision.error) {
         throw new ConflictException({
           error: decision.error.code,
@@ -405,17 +406,62 @@ export class SmartOrderService {
     return 'INSTANT_ORDER_FAILED';
   }
 
-  private shouldRetryOrder(response: HLPlaceOrderResponse): {
+  /**
+   * Les statuts d'un ordre posé par `instantOrder`, ou une erreur qui dit ce que la réponse veut dire.
+   *
+   * - **Un refus de l'action entière** (HTTP 200, `{ status: 'err', response: '<texte>' }`, mesuré le 2026-10-29 pour un
+   *   agent expiré : rien n'avait été posé) → **422 `EXCHANGE_ACTION_REFUSED`** avec le texte. Avant, `response.data`
+   *   levait un `TypeError` sur la chaîne : un 500, que le bot lit comme un ordre au sort inconnu, d'où l'abandon du
+   *   passage de TOUTES les paires et l'alerte « peut-être exécuté », alors que l'exchange avait refusé en clair.
+   * - **Un `ok` sans statut lisible** → **502 `EXCHANGE_UNEXPECTED_RESPONSE`**, avec la réponse brute. Avant, une liste
+   *   vide faisait relancer l'ordre (« cas improbable, mais on retry ») : une écriture relancée sans réponse claire, ce
+   *   que le contrat de ce gateway interdit (`docs/rate-limits.md`), puisque l'ordre a peut-être été posé.
+   */
+  private requireOrderStatuses(
+    order: HLSuccessResponse<HLPlaceOrderResponse> | undefined,
+  ): NonNullable<HLPlaceOrderResponse['data']['statuses']> {
+    const reply = order as unknown as
+      | { status?: unknown; response?: unknown }
+      | null
+      | undefined;
+    const raw = JSON.stringify(order) ?? 'no answer';
+
+    if (reply?.status === 'err') {
+      const text =
+        typeof reply.response === 'string' && reply.response
+          ? reply.response
+          : JSON.stringify(reply.response ?? null);
+      throw new HyperliquidGatewayException(
+        'EXCHANGE_ACTION_REFUSED',
+        `Hyperliquid refused the order as a whole: ${text}`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+
+    const statuses = (
+      reply?.response as { data?: { statuses?: unknown } } | undefined
+    )?.data?.statuses;
+    if (
+      reply?.status !== 'ok' ||
+      !Array.isArray(statuses) ||
+      statuses.length === 0
+    ) {
+      throw new HyperliquidGatewayException(
+        'EXCHANGE_UNEXPECTED_RESPONSE',
+        `Unexpected Hyperliquid answer to an instant order: ${raw}. The order may have been placed: read the open orders before anything else.`,
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+
+    return statuses as NonNullable<HLPlaceOrderResponse['data']['statuses']>;
+  }
+
+  private shouldRetryOrder(
+    statuses: NonNullable<HLPlaceOrderResponse['data']['statuses']>,
+  ): {
     retry: boolean;
     error?: { code: string; message: string };
   } {
-    const statuses = response.data.statuses;
-
-    if (!statuses || statuses.length === 0) {
-      // Cas improbable, mais on retry
-      return { retry: true };
-    }
-
     for (const s of statuses) {
       this.logger.log(`Open order status: ${JSON.stringify(s)}`);
       if ('error' in s) {
@@ -434,8 +480,13 @@ export class SmartOrderService {
       }
     }
 
-    // Aucun status clair → retry
-    return { retry: true };
+    // Ni erreur, ni ordre posé, ni ordre exécuté. Avant : relancé. Même raison que dans `requireOrderStatuses` : sans
+    // réponse claire, l'ordre a peut-être été posé, et une seconde pose le doublerait.
+    throw new HyperliquidGatewayException(
+      'EXCHANGE_UNEXPECTED_RESPONSE',
+      `Unexpected Hyperliquid order statuses for an instant order: ${JSON.stringify(statuses)}. The order may have been placed: read the open orders before anything else.`,
+      HttpStatus.BAD_GATEWAY,
+    );
   }
 
   async waitForOrderFinalStatus(

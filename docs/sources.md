@@ -369,8 +369,9 @@ sur l'ancien code, et deux mutations éprouvées (annuler toujours ; traiter un 
 refus (prix de déclenchement, ordre exécuté entre la lecture et le lot) ne sont pas mesurés, et rien ne dit qu'ils annulent
 aussi. C'est pourquoi le statut se lit : la décision tient dans les deux cas. Le cas M2a est en revanche réaliste tel quel pour
 le bot : un take-profit exécuté entre la lecture des ordres ouverts et le lot. La lecture du statut et le 422 sont prouvés par
-des tests unitaires, **pas exercés en réel**, et la réaction du bot est lue dans son code (une 4xx reste contenue à sa paire),
-pas jouée.
+des tests unitaires, **pas exercés en réel**. La réaction du bot au 422 est jouée de bout en bout dans le bot, contre son faux
+gateway (`nest-trading-bot/docs/known-gaps.md`) : paire `unprotected`, reprise, et — rejoué avec la réponse d'avant — une
+paire comptée `protected` sans stop.
 
 ⚠️ **Ce qui n'est pas établi.** Une seule observation par cas. Un lot dont toutes les entrées échouent, un lot de plus de deux
 entrées, un déclencheur dans un lot, un `Gtc` modifié pour croiser (le 325) : non essayés. Un `modify` seul répondu `ok` avec

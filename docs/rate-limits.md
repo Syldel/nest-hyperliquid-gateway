@@ -91,7 +91,11 @@ respecter :
 
 - **un 429 ne se relance jamais** ;
 - **une écriture n'est jamais relancée automatiquement** : sans réponse claire, l'ordre a
-  peut-être été exécuté ;
+  peut-être été exécuté. Ce gateway s'y tient lui-même depuis le 2026-11-09 : `instantOrder`
+  reposait l'ordre sur une liste de statuts vide ou illisible (« cas improbable, mais on
+  retry ») ; il répond désormais 502 `EXCHANGE_UNEXPECTED_RESPONSE`. Ses seules relances
+  restent celles d'un ordre **refusé en clair** (post-only, IOC sans contrepartie). Un refus de
+  l'action entière (`status: 'err'`) n'est pas relancé non plus : 422 `EXCHANGE_ACTION_REFUSED` ;
 - **le délai d'une écriture côté client doit dépasser la durée maximale d'un ordre
   instantané ici** : `SmartOrderService.instantOrder` fait jusqu'à 6 tentatives espacées de
   7,5 s, puis suit le statut jusqu'à 45 s — environ **100 s** au pire. Le bot attend 180 s.

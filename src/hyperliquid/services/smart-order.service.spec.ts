@@ -279,6 +279,86 @@ describe('SmartOrderService', () => {
 
       expect(placeOrderSpy).toHaveBeenCalledTimes(6);
     });
+
+    /**
+     * Un refus de l'action entière, et une réponse sans statut lisible : ni l'un ni l'autre ne se relance.
+     *
+     * Avant le 2026-11-09, le premier levait un `TypeError` (un 500, que le bot lit comme un ordre au sort inconnu et qui
+     * abandonne le passage de toutes les paires), et le second faisait reposer l'ordre, qui avait peut-être été posé.
+     */
+    describe('an answer that is not a clear order status', () => {
+      const failureOf = async (run: Promise<unknown>) => {
+        const error = await run.then(
+          () => undefined,
+          (e: unknown) => e,
+        );
+        expect(error).toBeInstanceOf(HyperliquidGatewayException);
+        return error as HyperliquidGatewayException;
+      };
+
+      const placeWith = async (answer: unknown) => {
+        (
+          publicInfoService.getPerpMarketsWithPrices as jest.Mock
+        ).mockResolvedValue([
+          { name: 'BTC', markPrice: '50000', szDecimals: 5 },
+        ]);
+        placeOrderSpy.mockResolvedValue(answer);
+        return failureOf(
+          service.instantOrder({
+            assetName: 'BTC',
+            isBuy: true,
+            size: { type: 'base', sz: '0.001' },
+            maxRetries: 6,
+            delayMs: 0,
+          }),
+        );
+      };
+
+      // La forme et le texte mesurés le 2026-10-29 (agent expiré) : rien n'avait été posé.
+      it('names a refusal of the whole action, with the exchange text, and does not place again', async () => {
+        const error = await placeWith({
+          status: 'err',
+          response:
+            'User or API Wallet 0x18176fd945515d65b66f3c524278c6cd76202d17 does not exist.',
+        });
+
+        expect(error.getStatus()).toBe(422);
+        expect(error.getResponse()).toMatchObject({
+          error: 'EXCHANGE_ACTION_REFUSED',
+        });
+        expect(error.message).toContain('does not exist');
+        expect(placeOrderSpy).toHaveBeenCalledTimes(1);
+        expect(waitOrderSpy).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        [
+          'an empty list of statuses',
+          { status: 'ok', response: { type: 'order', data: { statuses: [] } } },
+        ],
+        ['no data', { status: 'ok', response: { type: 'order' } }],
+        ['no answer', undefined],
+        [
+          'a status that is neither an error nor an order',
+          {
+            status: 'ok',
+            response: { type: 'order', data: { statuses: [{}] } },
+          },
+        ],
+      ])(
+        'does not place the order again on %s: it may already be placed',
+        async (_label, answer) => {
+          const error = await placeWith(answer);
+
+          expect(error.getStatus()).toBe(502);
+          expect(error.getResponse()).toMatchObject({
+            error: 'EXCHANGE_UNEXPECTED_RESPONSE',
+          });
+          expect(error.message).toContain('may have been placed');
+          expect(placeOrderSpy).toHaveBeenCalledTimes(1);
+        },
+      );
+    });
   });
 
   describe('waitForOrderFinalStatus', () => {
