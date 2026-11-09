@@ -1041,6 +1041,305 @@ describe('SmartOrderService', () => {
         return error as HyperliquidGatewayException;
       };
 
+      // La forme d'une réponse `orderStatus`, copiée de la mesure du 2026-11-09 (`nest-trading-bot/captures/order-status-…`) :
+      // l'ordre, son statut, l'instant de ce statut.
+      const orderStatusOf = (spec: string, status: string) => ({
+        status: 'order',
+        order: {
+          order: makeOrderFromSpec(spec, assetName),
+          status,
+          statusTimestamp: 1794258427912,
+        },
+      });
+
+      /**
+       * Une modification refusée DANS un lot (`statuses[i].error`) : le sort de l'ordre visé se lit, il ne se suppose plus.
+       *
+       * Mesuré le 2026-11-09 sur le mainnet (`docs/sources.md`, « Le `modify` refusé dans un lot ») : un lot répond un statut
+       * par entrée, et dans les deux cas observés l'oid de l'entrée refusée était déjà mort après la réponse — un ordre mort le
+       * restait, un ordre vivant refusé était annulé par son refus. Les deux textes ci-dessous sont ceux de cette mesure. ⚠️
+       * Elle portait sur des ALO, pas sur des déclencheurs : les doubles copient la FORME, le statut lu décide.
+       */
+      describe('a modification refused inside the batch', () => {
+        const deadText = 'Cannot modify canceled or filled order';
+        const crossingText =
+          'Error placing new order during modify: Post only order would have immediately matched, bbo was 74940@74941.';
+        const tpRefused = (text: string) => ({
+          status: 'ok',
+          response: {
+            type: 'order',
+            data: {
+              statuses: [
+                { error: text }, // le TP 101
+                { resting: { oid: 1222 } }, // le SL 102, appliqué
+              ],
+            },
+          },
+        });
+        // Le refus d'un ordre posé, mesuré le 2026-11-05 et le 2026-11-09 (`live-check.md`).
+        const marginRefusal = {
+          status: 'ok',
+          response: {
+            type: 'order',
+            data: {
+              statuses: [
+                { error: 'Insufficient margin to place order. asset=0' },
+              ],
+            },
+          },
+        };
+        const recreatedTp = {
+          order: expect.objectContaining({
+            orderType: {
+              trigger: expect.objectContaining({
+                tpsl: 'tp',
+                triggerPx: '9100',
+              }) as unknown,
+            },
+          }) as unknown,
+        };
+
+        it.each([
+          ['canceled by its refusal', crossingText],
+          ['already dead', deadText],
+        ])(
+          'recreates an order %s, without cancelling it again',
+          async (_label, text) => {
+            batchModifyOrdersSpy.mockResolvedValue(tpRefused(text));
+            getOrderStatusSpy.mockResolvedValue(
+              orderStatusOf('101_0.5_9000_tp', 'canceled'),
+            );
+
+            const result = await service.placeBatchProtectiveOrders(
+              desired,
+              false,
+            );
+
+            expect(getOrderStatusSpy).toHaveBeenCalledWith(101, false);
+            expect(cancelOrderSpy).not.toHaveBeenCalled();
+            expect(placeOrderSpy).toHaveBeenCalledWith(
+              expect.objectContaining(recreatedTp),
+            );
+            // le TP 9200 prévu, et le TP 9100 que la modification n'a pas pu faire
+            expect(placeOrderSpy).toHaveBeenCalledTimes(2);
+            expect(result.tp.cancelled).toEqual([]);
+            expect(result.sl.updated).toEqual([1222]);
+          },
+        );
+
+        it('reads no status when no modification is refused', async () => {
+          batchModifyOrdersSpy.mockResolvedValue({
+            status: 'ok',
+            response: {
+              type: 'order',
+              data: {
+                statuses: [
+                  { resting: { oid: 1111 } },
+                  { resting: { oid: 1222 } },
+                ],
+              },
+            },
+          });
+
+          await service.placeBatchProtectiveOrders(desired, false);
+
+          expect(getOrderStatusSpy).not.toHaveBeenCalled();
+        });
+
+        // Le cas réaliste pour le bot : un take-profit exécuté entre la lecture du carnet et le lot. Le recréer poserait un
+        // TP calculé pour une position qui n'existe plus sous cette taille.
+        it.each(['filled', 'triggered'])(
+          'does not recreate an order that was %s, and says the plan is out of date',
+          async (state) => {
+            batchModifyOrdersSpy.mockResolvedValue(tpRefused(deadText));
+            getOrderStatusSpy.mockResolvedValue(
+              orderStatusOf('101_0.5_9000_tp', state),
+            );
+
+            const error = await failureOf(
+              service.placeBatchProtectiveOrders(desired, false),
+            );
+
+            expect(error.getStatus()).toBe(422);
+            expect(error.getResponse()).toMatchObject({
+              error: 'PROTECTIVE_PLAN_INCOMPLETE',
+            });
+            expect(error.message).toContain(`already ${state}`);
+            expect(cancelOrderSpy).not.toHaveBeenCalled();
+            // seule la création prévue (le TP 9200) part
+            expect(placeOrderSpy).toHaveBeenCalledTimes(1);
+            expect(placeOrderSpy).not.toHaveBeenCalledWith(
+              expect.objectContaining(recreatedTp),
+            );
+            // ce qui a été appliqué est dit : le SL 102 modifié
+            expect(error.message).toContain('"updated":[1222]');
+          },
+        );
+
+        // « unknownOid » est la forme que la doc de l'endpoint `info` donne pour un oid inconnu (non mesurée ici).
+        it.each([
+          ['an unknown oid', { status: 'unknownOid' }],
+          ['an empty answer', null],
+        ])(
+          'writes nothing for an order whose status reads as %s, and says so',
+          async (_label, answer) => {
+            batchModifyOrdersSpy.mockResolvedValue(tpRefused(deadText));
+            getOrderStatusSpy.mockResolvedValue(answer);
+
+            const error = await failureOf(
+              service.placeBatchProtectiveOrders(desired, false),
+            );
+
+            expect(error.getResponse()).toMatchObject({
+              error: 'PROTECTIVE_PLAN_INCOMPLETE',
+            });
+            expect(error.message).toContain('status could not be read');
+            expect(cancelOrderSpy).not.toHaveBeenCalled();
+            expect(placeOrderSpy).toHaveBeenCalledTimes(1);
+          },
+        );
+
+        it('writes nothing for an order whose status cannot be fetched, and says why', async () => {
+          batchModifyOrdersSpy.mockResolvedValue(tpRefused(deadText));
+          getOrderStatusSpy.mockRejectedValue(new Error('network down'));
+
+          const error = await failureOf(
+            service.placeBatchProtectiveOrders(desired, false),
+          );
+
+          expect(error.getResponse()).toMatchObject({
+            error: 'PROTECTIVE_PLAN_INCOMPLETE',
+          });
+          expect(logError).toHaveBeenCalledWith(
+            expect.stringContaining('network down'),
+          );
+          expect(cancelOrderSpy).not.toHaveBeenCalled();
+        });
+
+        it('fails, with the raw answer, when the recreation is refused', async () => {
+          batchModifyOrdersSpy.mockResolvedValue(tpRefused(crossingText));
+          getOrderStatusSpy.mockResolvedValue(
+            orderStatusOf('101_0.5_9000_tp', 'canceled'),
+          );
+          placeOrderSpy.mockResolvedValue(marginRefusal);
+
+          const error = await failureOf(
+            service.placeBatchProtectiveOrders(desired, false),
+          );
+
+          expect(error.getStatus()).toBe(422);
+          expect(error.getResponse()).toMatchObject({
+            error: 'PROTECTIVE_PLAN_INCOMPLETE',
+          });
+          expect(error.message).toContain('TP at 9100');
+          expect(error.message).toContain('Insufficient margin');
+        });
+
+        it('says an outcome is unknown when the right-length list holds an entry with neither oid nor error', async () => {
+          batchModifyOrdersSpy.mockResolvedValue({
+            status: 'ok',
+            response: {
+              type: 'order',
+              data: { statuses: [null, { resting: { oid: 1222 } }] },
+            },
+          });
+
+          const error = await failureOf(
+            service.placeBatchProtectiveOrders(desired, false),
+          );
+
+          expect(error.getResponse()).toMatchObject({
+            error: 'PROTECTIVE_PLAN_INCOMPLETE',
+          });
+          expect(error.message).toContain('TP 101');
+          expect(error.message).toContain('outcome is unknown');
+        });
+      });
+
+      /**
+       * Une création refusée. Avant le 2026-11-09, elle n'était que journalisée : un stop manquant dont la pose était refusée
+       * laissait le bot lire `protected` dès qu'une autre protection du même plan avait bougé.
+       */
+      describe('a creation the exchange does not accept', () => {
+        const allApplied = {
+          status: 'ok',
+          response: {
+            type: 'order',
+            data: {
+              statuses: [
+                { resting: { oid: 1111 } },
+                { resting: { oid: 1222 } },
+              ],
+            },
+          },
+        };
+
+        it('fails with the raw answer when the exchange refuses the order', async () => {
+          batchModifyOrdersSpy.mockResolvedValue(allApplied);
+          // mesuré le 2026-11-05 et le 2026-11-09 (`live-check.md`)
+          placeOrderSpy.mockResolvedValue({
+            status: 'ok',
+            response: {
+              type: 'order',
+              data: {
+                statuses: [
+                  { error: 'Insufficient margin to place order. asset=0' },
+                ],
+              },
+            },
+          });
+
+          const error = await failureOf(
+            service.placeBatchProtectiveOrders(desired, false),
+          );
+
+          expect(error.getStatus()).toBe(422);
+          expect(error.getResponse()).toMatchObject({
+            error: 'PROTECTIVE_PLAN_INCOMPLETE',
+          });
+          expect(error.message).toContain('TP at 9200');
+          expect(error.message).toContain('Insufficient margin');
+          expect(error.message).toContain('"updated":[1111]');
+        });
+
+        // La forme d'un refus de l'action entière, mesurée le 2026-10-29 (agent expiré). L'ancien code levait ici un
+        // `TypeError` sur `res.response.data`, et les créations suivantes du plan ne partaient pas.
+        it('reads an err envelope as a refusal and still sends the next creations of the plan', async () => {
+          getFrontendOpenOrdersSpy.mockResolvedValue([]);
+          placeOrderSpy
+            .mockResolvedValueOnce({
+              status: 'err',
+              response:
+                'User or API Wallet 0x18176fd945515d65b66f3c524278c6cd76202d17 does not exist.',
+            })
+            .mockResolvedValueOnce({
+              response: { data: { statuses: [{ resting: { oid: 301 } }] } },
+            });
+
+          const error = await failureOf(
+            service.placeBatchProtectiveOrders(
+              {
+                assetName,
+                isBuy,
+                tp: [{ price: '9100', sz: '0.6' }],
+                sl: [{ price: '8100', sz: '0.35' }],
+              },
+              false,
+            ),
+          );
+
+          expect(error.getResponse()).toMatchObject({
+            error: 'PROTECTIVE_PLAN_INCOMPLETE',
+          });
+          expect(error.message).toContain('does not exist');
+          // le stop est quand même posé
+          expect(placeOrderSpy).toHaveBeenCalledTimes(2);
+          expect(error.message).toContain(
+            '"sl":{"cancelled":[],"created":[301]',
+          );
+        });
+      });
+
       it.each([
         ['an err envelope', refusal],
         ['an empty object', {}],
@@ -1167,7 +1466,8 @@ describe('SmartOrderService', () => {
 
       // Ce que la doc invoque comme « le repli existe » n'avait aucun test : on le fige, car le traitement d'un lot refusé en
       // entier ne doit pas le toucher (un refus PAR ORDRE reste un repli par annulation + recréation, pas une exception).
-      it('still falls back to cancel and recreate when the exchange refuses one order of the batch', async () => {
+      // Depuis le 2026-11-09, ce repli n'a lieu que si l'ordre refusé est encore OUVERT (voir plus bas).
+      it('still falls back to cancel and recreate when the exchange refuses one order of the batch and it is still open', async () => {
         batchModifyOrdersSpy.mockResolvedValue({
           status: 'ok',
           response: {
@@ -1179,6 +1479,9 @@ describe('SmartOrderService', () => {
             },
           },
         });
+        getOrderStatusSpy.mockResolvedValue(
+          orderStatusOf('101_0.5_9000_tp', 'open'),
+        );
 
         const result = await service.placeBatchProtectiveOrders(desired, false);
 
@@ -1355,6 +1658,9 @@ describe('SmartOrderService', () => {
           ]);
           batchModifyOrdersSpy.mockResolvedValue(
             okWith([{ error: refusedText }]),
+          );
+          getOrderStatusSpy.mockResolvedValue(
+            orderStatusOf('101_0.5_9000_tp', 'open'),
           );
 
           const result = await service.placeBatchProtectiveOrders(

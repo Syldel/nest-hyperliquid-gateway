@@ -346,15 +346,31 @@ Avec les mesures précédentes, le tableau des deux niveaux se complète :
 - **L'erreur unique de pré-validation pour tout le lot** (la crainte de `EXCHANGE_BATCH_MODIFY_UNMATCHED`, plus bas) ne s'est
   pas produite pour ces deux motifs : les statuts se comptaient un par entrée.
 
-**Ce que ça change pour le réalignement** (`smart-order.service.ts`, `placeBatchProtectiveOrders`), lu dans le code, non
-exercé : sur `statuses[i].error`, le repli **annule** l'oid visé puis **recrée** l'ordre avec les mêmes paramètres. D'après
-M2a et M2b, cet oid est déjà mort : l'annulation échouera (seulement journalisée, `Failed to cancel order`) et la recréation
-reprend des paramètres que l'exchange vient de refuser. Si elle échoue à son tour, `Order creation failed` est journalisé, mais
-**rien n'est levé** et le compte rendu rendu au bot ne dit pas qu'un ordre manque. Pour un stop : la position reste sans
-protection et le bot ne l'apprend pas. ⚠️ Mesuré sur des ALO au repos, **jamais sur des déclencheurs** `reduceOnly`, ceux que le
-réalignement modifie : leurs motifs de refus (prix de déclenchement, ordre exécuté entre la lecture et le lot) ne sont pas
-mesurés, et rien ne dit qu'ils annulent aussi. Le cas M2a est en revanche réaliste tel quel pour le bot : un take-profit exécuté
-entre la lecture des ordres ouverts et le lot.
+**Ce que ça a changé dans le réalignement** (`smart-order.service.ts`, `placeBatchProtectiveOrders`, le 2026-11-09). Avant :
+sur `statuses[i].error`, le repli **annulait** l'oid visé puis **recréait** l'ordre avec les mêmes paramètres, et une recréation
+refusée n'était que journalisée (`Order creation failed`) : le bot recevait un compte rendu où un stop manquait sans que rien
+ne le dise, et lisait `protected` dès qu'une autre protection avait bougé. D'après M2a et M2b, l'annulation visait de plus un
+ordre déjà mort. Maintenant (`planAfterRefusedModify`), le gateway **lit le statut** de l'oid refusé (`orderStatus`, poids 2)
+plutôt que de supposer :
+
+| statut lu                                  | ce que fait le gateway                                                         |
+| ------------------------------------------ | ------------------------------------------------------------------------------ |
+| `open`                                     | l'ancien repli : annuler, puis recréer                                         |
+| `filled`, `triggered`                      | ne pas recréer : la protection a joué et le plan est périmé ; le bot recalcule |
+| mort sans exécution (`canceled` et autres) | recréer, sans annuler                                                          |
+| illisible (`unknownOid`, rien, erreur)     | ne rien écrire                                                                 |
+
+Toute protection qui n'est pas en place à la fin (un ordre exécuté ou illisible ci-dessus, une recréation ou une création
+refusée, un statut de lot sans oid ni erreur) fait lever **422 `PROTECTIVE_PLAN_INCOMPLETE`** une fois le plan terminé, avec ce
+qui a été appliqué. Le bot marque alors la paire `unprotected` : alerte, et reprise à la minute. 14 tests, dont 11 qui tombent
+sur l'ancien code, et deux mutations éprouvées (annuler toujours ; traiter un ordre exécuté comme mort).
+
+⚠️ Mesuré sur des ALO au repos, **jamais sur des déclencheurs** `reduceOnly`, ceux que le réalignement modifie : leurs motifs de
+refus (prix de déclenchement, ordre exécuté entre la lecture et le lot) ne sont pas mesurés, et rien ne dit qu'ils annulent
+aussi. C'est pourquoi le statut se lit : la décision tient dans les deux cas. Le cas M2a est en revanche réaliste tel quel pour
+le bot : un take-profit exécuté entre la lecture des ordres ouverts et le lot. La lecture du statut et le 422 sont prouvés par
+des tests unitaires, **pas exercés en réel**, et la réaction du bot est lue dans son code (une 4xx reste contenue à sa paire),
+pas jouée.
 
 ⚠️ **Ce qui n'est pas établi.** Une seule observation par cas. Un lot dont toutes les entrées échouent, un lot de plus de deux
 entrées, un déclencheur dans un lot, un `Gtc` modifié pour croiser (le 325) : non essayés. Un `modify` seul répondu `ok` avec
@@ -476,8 +492,8 @@ distinguer l'ancienne base de la nouvelle : lecture, non éprouvée.
   - un refus **par ordre** dans une réponse `ok` (`statuses[i].error`) : inchangé. `Failed to modify order` dans le journal, puis
     repli par annulation + recréation, avec la seconde sans protection que `batchModify` évitait. Ce repli a maintenant un test,
     il n'en avait aucun. ⚠️ **C'est la forme observée le 2026-11-09** pour un lot (sur des ALO), et l'oid visé était alors déjà
-    mort : l'annulation du repli vise un ordre mort, et une recréation qui échoue n'est que journalisée (voir « Le `modify`
-    refusé dans un lot ») ;
+    mort. Depuis ce jour, le repli lit le statut de l'oid avant d'annuler ou de recréer, et lève `PROTECTIVE_PLAN_INCOMPLETE`
+    pour ce qui reste à découvert (voir « Le `modify` refusé dans un lot ») ;
   - une réponse qui n'est **pas un `ok`** — l'enveloppe `{ status: 'err', response }` en HTTP 200, `{}`, `null`, rien. _Avant_ : le
     bloc sautait sans un mot, les annulations et les créations du même passage partaient, et le gateway rendait un compte rendu
     d'apparence normale ; le bot lisait `protected` dès que ce compte rendu n'était pas vide, et ne signalait « rien appliqué »
@@ -504,10 +520,10 @@ distinguer l'ancienne base de la nouvelle : lecture, non éprouvée.
   (`Failed to realign protective orders`, paire `unprotected` avec la raison). Le gateway emploie déjà 422 pour ses refus clairs.
   ⚠️ C'est un couplage avec la classification du bot : si elle change, ce choix devient faux sans qu'un test le dise (les tests
   figent le numéro, pas la raison).
-- **Le signal précoce compte donc quatre traces** : `Failed to modify order` (refus par ordre), `refused as a whole` et
-  `cannot be matched one to one` dans le journal du gateway, et, côté bot, `Failed to realign protective orders` suivi de
-  `EXCHANGE_BATCH_MODIFY_REFUSED` ou `EXCHANGE_BATCH_MODIFY_UNMATCHED`. Un `cancelled` non nul au retour de `batch-protective`
-  reste la trace du repli par ordre.
+- **Le signal précoce compte donc ces traces** : `Failed to modify order` (refus par ordre), `refused as a whole`,
+  `cannot be matched one to one` et `is not fully in place` dans le journal du gateway, et, côté bot, `Failed to realign
+  protective orders` suivi de `EXCHANGE_BATCH_MODIFY_REFUSED`, `EXCHANGE_BATCH_MODIFY_UNMATCHED` ou `PROTECTIVE_PLAN_INCOMPLETE`.
+  Un `cancelled` non nul au retour de `batch-protective` reste la trace du repli d'un ordre resté ouvert.
 
 - **`a: true` n'a pas été mesuré sur un stop, et n'est pas à activer sans mesure** : il poserait le nouvel ordre même si
   l'annulation avait échoué, par exemple parce que l'ancien venait de se déclencher. L'envoyer demanderait aussi les types
@@ -543,9 +559,11 @@ distinguer l'ancienne base de la nouvelle : lecture, non éprouvée.
   (`gateway-contract.ts`) ne modélise pas ce refus.
 - **Pas de repli annulation + recréation pour un lot refusé en entier** : sa cause est inconnue, et ce repli ouvre une fenêtre sans
   protection. À décider quand on connaîtra le texte réel du refus d'un lot (celui d'un `modify` seul est connu depuis le 2026-10-27, et ce refus-là a annulé l'ordre d'origine : relire le carnet avant tout repli).
-- **Trois trous voisins, non traités** : un échec de l'annulation (réponse non `ok`) est seulement journalisé, une création qui
-  reçoit une réponse non `ok` lève un `TypeError`, et un élément `null` ou absent dans une liste **de la bonne longueur** est
-  encore sauté par `if (!status) return;`. Le même mécanisme (consigner, finir, lever) pourrait les couvrir.
+- **Trois trous voisins, dont deux traités le 2026-11-09** par le même mécanisme (consigner, finir, lever
+  `PROTECTIVE_PLAN_INCOMPLETE`) : une création qui reçoit une réponse non `ok` ne lève plus de `TypeError`, et un élément `null`
+  ou sans oid ni erreur dans une liste de la bonne longueur n'est plus sauté. **Reste** : l'échec d'une annulation prévue
+  (réponse non `ok`) n'est que journalisé. Il laisse un ordre de trop, pas une position nue, ce qui explique qu'il n'ait pas été
+  traité en même temps.
 - **Si une écriture suivante du même plan lève avant la fin**, le refus n'existe plus que dans le journal (un test le fige).
 
 C'est le cas inverse de celui qui a fait écrire ce document : ici la doc est précise et la mesure la dément **à la lettre** —

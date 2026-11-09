@@ -976,6 +976,88 @@ export class SmartOrderService {
     );
   }
 
+  /**
+   * Ce qu'on fait d'une modification que l'exchange a refusée DANS un lot (`statuses[i].error`), d'après le statut de
+   * l'ordre visé, lu, et non supposé.
+   *
+   * Avant le 2026-11-09, le repli supposait l'ordre intact : il l'annulait, puis le recréait. Mesuré ce jour-là sur le
+   * mainnet (`docs/sources.md`, « Le `modify` refusé dans un lot ») : dans les deux cas observés, l'oid visé était DÉJÀ mort
+   * après la réponse. Un ordre mort reste mort (« Cannot modify canceled or filled order »), et un ordre vivant refusé est
+   * annulé par son refus (« Error placing new order during modify »). L'annulation du repli visait donc un ordre qui
+   * n'existait plus. ⚠️ Mesuré sur des ALO, jamais sur les déclencheurs que ce service modifie : un refus de déclencheur
+   * qui laisserait l'ordre en place reste possible, d'où la lecture plutôt qu'une nouvelle supposition dans l'autre sens.
+   *
+   * - `open` : le repli d'avant, annuler puis recréer ;
+   * - exécuté (`filled`, `triggered`) : ne PAS recréer. La protection a joué, la position a changé, et le plan calculé
+   *   avant n'est plus le bon (le cas réaliste : un take-profit exécuté entre la lecture du carnet et le lot). Le bot
+   *   recalcule au passage suivant ;
+   * - mort sans avoir été exécuté (`canceled` et les autres) : recréer, sans annuler ;
+   * - illisible : n'écrire rien. Recréer pourrait doubler un ordre encore en place, annuler pourrait retirer le seul stop.
+   *
+   * Tout ce qui ne sera pas en place à la fin s'ajoute à `incomplete`, levé en fin de plan. Coût : un `orderStatus`
+   * (poids 2) par modification refusée, ce qui reste rare.
+   */
+  private async planAfterRefusedModify(
+    modify: HLModifyInput,
+    error: string,
+    diff: { cancels: HLOid[]; creates: NormalizedProtectiveOrder[] },
+    label: 'TP' | 'SL',
+    incomplete: string[],
+    isTestnet: boolean,
+  ): Promise<void> {
+    const name = `${label} ${modify.oid}`;
+
+    let read: HLOrderStatusResponse | null;
+    try {
+      read = await this.privateInfoService.getOrderStatus(
+        modify.oid,
+        isTestnet,
+      );
+    } catch (readError) {
+      const reason =
+        readError instanceof Error ? readError.message : String(readError);
+      this.logger.error(
+        `Could not read the status of ${name} after its refused modification: ${reason}`,
+      );
+      read = null;
+    }
+
+    // `unknownOid`, une réponse sans `order` ou un statut absent : rien ne dit où en est l'ordre.
+    const state = read?.status === 'order' ? read.order?.status : undefined;
+    if (state === undefined) {
+      incomplete.push(
+        `${name}: its modification was refused (${error}) and its status could not be read (${JSON.stringify(read) ?? 'no answer'}), ` +
+          'so it was neither cancelled nor recreated',
+      );
+      return;
+    }
+
+    if (state === 'filled' || state === 'triggered') {
+      incomplete.push(
+        `${name}: its modification was refused (${error}) because it was already ${state}; ` +
+          'it was not recreated, and the plan was computed before that',
+      );
+      return;
+    }
+
+    const recreate = this.normalizeModifyInput(modify);
+    if (recreate === null) {
+      incomplete.push(
+        `${name}: its modification was refused (${error}) and it could not be rebuilt for a recreation (it is ${state})`,
+      );
+      return;
+    }
+
+    if (state === 'open') diff.cancels.push(modify.oid);
+    diff.creates.push(recreate);
+    this.logger.warn(
+      `${name} is ${state} after its refused modification: ` +
+        (state === 'open'
+          ? 'cancelled, then recreated'
+          : 'recreated, with nothing to cancel'),
+    );
+  }
+
   private filterUnchangedOrders(params: {
     modList: HLModifyInput[];
     existing: ExistingProtectiveOrder[];
@@ -1132,6 +1214,12 @@ export class SmartOrderService {
       | { code: string; logged: string; thrown: string }
       | undefined;
 
+    // Chaque protection du plan qui ne sera PAS en place à la fin, en une phrase : une modification refusée qu'on ne peut
+    // pas rétablir, une création refusée. Même règle que `modifyFailure` : consigné tout de suite, levé en fin de plan.
+    // Avant le 2026-11-09, ces cas n'étaient que journalisés, et le bot recevait un compte rendu où il manquait un stop sans
+    // que rien ne le dise : il lit `protected` dès qu'une autre protection a bougé (`hl-protection.service.ts`).
+    const incomplete: string[] = [];
+
     if (modifies.length > 0) {
       const bathModifyRes = await this.tradeService.batchModifyOrders(
         modifies,
@@ -1149,55 +1237,48 @@ export class SmartOrderService {
         answered.length === modifies.length
       ) {
         const bmStatus = bathModifyRes.response.data.statuses;
+        const refused: {
+          modify: HLModifyInput;
+          error: string;
+          isTp: boolean;
+        }[] = [];
 
         modifies.forEach((m, index) => {
           const status = bmStatus[index];
-          if (!status) return;
+          const isTp = tpDiff.modifies.some((tpM) => tpM.oid === m.oid);
 
-          const newOid = status.resting?.oid || status.filled?.oid;
-          if (newOid) {
-            const isTp = tpDiff.modifies.some((tpM) => tpM.oid === m.oid);
+          const newOid = status?.resting?.oid ?? status?.filled?.oid;
+          if (newOid !== undefined) {
             if (isTp) {
               result.tp.updated.push(newOid);
             } else {
               result.sl.updated.push(newOid);
             }
-          } else if (status.error) {
+          } else if (status?.error) {
             this.logger.error(
               `Failed to modify order ${m.oid}: ${status.error}`,
             );
-
-            // Fallback: Try to cancel the existing order and recreate it
-            const isTp = tpDiff.modifies.some((tpM) => tpM.oid === m.oid);
-            const currentOrder = m;
-
-            if (isTp) {
-              // --- Gestion du Take Profit (TP) ---
-              tpDiff.cancels.push(currentOrder.oid);
-
-              const normalizedTp = this.normalizeModifyInput(currentOrder);
-              if (normalizedTp !== null) {
-                tpDiff.creates.push(normalizedTp);
-              } else {
-                this.logger.warn(
-                  `Failed to normalize TP order for fallback creation (OID: ${currentOrder.oid})`,
-                );
-              }
-            } else {
-              // --- Gestion du Stop Loss (SL) ---
-              slDiff.cancels.push(currentOrder.oid);
-
-              const normalizedSl = this.normalizeModifyInput(currentOrder);
-              if (normalizedSl !== null) {
-                slDiff.creates.push(normalizedSl);
-              } else {
-                this.logger.warn(
-                  `Failed to normalize SL order for fallback creation (OID: ${currentOrder.oid})`,
-                );
-              }
-            }
+            refused.push({ modify: m, error: status.error, isTp });
+          } else {
+            // Ni nouvel oid ni erreur (un élément `null`, un objet inconnu) : avant, `if (!status) return;` le sautait
+            // sans un mot. On ne sait pas ce que l'ordre est devenu : on ne l'écrit pas, on le dit.
+            incomplete.push(
+              `${isTp ? 'TP' : 'SL'} ${m.oid}: the batchModify answered ${JSON.stringify(status)} for it, neither a new oid nor an error, so its outcome is unknown`,
+            );
           }
         });
+
+        // Le repli ne suppose plus que l'ordre refusé est intact : il lit son statut (voir `planAfterRefusedModify`).
+        for (const { modify, error, isTp } of refused) {
+          await this.planAfterRefusedModify(
+            modify,
+            error,
+            isTp ? tpDiff : slDiff,
+            isTp ? 'TP' : 'SL',
+            incomplete,
+            isTestnet,
+          );
+        }
       } else if (bathModifyRes?.status === 'ok') {
         // Un « ok » dont les statuts ne se comptent pas un par modification. L'ordre des statuts est le SEUL lien entre une
         // réponse et un ordre ; or la page des erreurs d'Hyperliquid (lue en brut le 2026-10-27) dit qu'une pré-validation en
@@ -1271,45 +1352,35 @@ export class SmartOrderService {
     }
 
     // 6️⃣ Creates
-    for (const tp of tpDiff.creates) {
-      const res = await this.tradeService.placeOrder({
-        order: this.toHLOrderDetails({
-          assetName,
-          isBuy,
-          sz: tp.sz,
-          price: tp.price,
-          isMarket: tp.isMarket,
-          kind: 'tp',
-        }),
-        isTestnet,
-      });
-      const oStatus = res.response.data.statuses[0];
-      const oid = oStatus?.resting?.oid || oStatus?.filled?.oid;
-      if (oid) {
-        result.tp.created.push(oid);
-      } else {
-        this.logger.error(`Order creation failed: ${JSON.stringify(oStatus)}`);
-      }
-    }
-
-    for (const sl of slDiff.creates) {
-      const res = await this.tradeService.placeOrder({
-        order: this.toHLOrderDetails({
-          assetName,
-          isBuy,
-          sz: sl.sz,
-          price: sl.price,
-          isMarket: sl.isMarket,
-          kind: 'sl',
-        }),
-        isTestnet,
-      });
-      const oStatus = res.response.data.statuses[0];
-      const oid = oStatus?.resting?.oid || oStatus?.filled?.oid;
-      if (oid) {
-        result.sl.created.push(oid);
-      } else {
-        this.logger.error(`Order creation failed: ${JSON.stringify(oStatus)}`);
+    for (const [kind, creates] of [
+      ['tp', tpDiff.creates],
+      ['sl', slDiff.creates],
+    ] as const) {
+      for (const item of creates) {
+        const res = await this.tradeService.placeOrder({
+          order: this.toHLOrderDetails({
+            assetName,
+            isBuy,
+            sz: item.sz,
+            price: item.price,
+            isMarket: item.isMarket,
+            kind,
+          }),
+          isTestnet,
+        });
+        // Lu sans supposer la forme : une enveloppe `err` porte une chaîne dans `response`, et l'ancien
+        // `res.response.data.statuses[0]` levait alors un `TypeError` qui interrompait le reste du plan.
+        const oStatus = res?.response?.data?.statuses?.[0];
+        const oid = oStatus?.resting?.oid ?? oStatus?.filled?.oid;
+        if (oid !== undefined) {
+          result[kind].created.push(oid);
+        } else {
+          const raw = JSON.stringify(res) ?? 'no answer';
+          this.logger.error(`Order creation failed: ${raw}`);
+          incomplete.push(
+            `${kind.toUpperCase()} at ${item.price} (size ${item.sz}): the creation was not accepted: ${raw}`,
+          );
+        }
       }
     }
 
@@ -1322,12 +1393,31 @@ export class SmartOrderService {
     // mesuré pour un `batchModify` : le texte d'un refus de `modify` sur un déclencheur n'est pas connu. D'où la demande de
     // relire le carnet. Pas de repli par annulation + recréation pour un lot refusé en entier : sa cause est inconnue, et ce
     // repli ouvre une fenêtre sans protection (voir `docs/sources.md`).
+    const alsoMissing =
+      incomplete.length > 0
+        ? ` Also not in place: ${incomplete.join('; ')}.`
+        : '';
+
     if (modifyFailure !== undefined) {
       throw new HyperliquidGatewayException(
         modifyFailure.code,
         `${modifyFailure.thrown}. ` +
-          `The modifications are not reported as applied; the cancels and creations of the same plan WERE sent, accepted: ${JSON.stringify(result)}. ` +
-          `Read the open orders before anything else.`,
+          `The modifications are not reported as applied; the cancels and creations of the same plan WERE sent, accepted: ${JSON.stringify(result)}.` +
+          `${alsoMissing} Read the open orders before anything else.`,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+      );
+    }
+
+    // 422 pour la même raison que plus haut : un refus connu appartient à sa paire, et le bot la marque `unprotected`
+    // (alerte, reprise à la minute) au lieu de compter la position comme couverte.
+    if (incomplete.length > 0) {
+      const message =
+        `The protective plan for ${assetName} is not fully in place: ${incomplete.join('; ')}. ` +
+        `What was applied: ${JSON.stringify(result)}. Read the open orders before anything else.`;
+      this.logger.error(message);
+      throw new HyperliquidGatewayException(
+        'PROTECTIVE_PLAN_INCOMPLETE',
+        message,
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
     }
