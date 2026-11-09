@@ -269,7 +269,8 @@ ordinaire `/hyperliquid/order/modify`, celle de l'application mobile, et non la 
 
 - **Les autres motifs de refus.** Un post-only qui croise est un refus du **nouvel** ordre. Pour un prix ou une taille invalides,
   un déclencheur, un minimum non atteint, le refus peut tomber avant l'annulation ou après : non mesuré.
-- **Un `batchModify` refusé.** Non mesuré. L'hypothèse de ce document (plus bas : un lot refusé n'a « rien modifié ») est
+- **Un `batchModify` refusé.** Mesuré depuis, sur des ALO, le 2026-11-09 (« Le `modify` refusé dans un lot », plus bas) : un
+  statut par entrée, et l'ordre de l'entrée refusée annulé. Ce qui suit est la lecture d'avant la mesure. L'hypothèse de ce document (plus bas : un lot refusé n'a « rien modifié ») est
   désormais **suspecte** pour les stops que le réalignement modifie. Le 422 `EXCHANGE_BATCH_MODIFY_REFUSED` demande déjà de relire
   le carnet, ce qui reste la bonne réaction ; le chemin du bot qui s'y suit n'a pas été relu pour cette question.
 - **Un `Gtc` modifié pour croiser** (le 325 dit : transformé en ALO) n'a pas été essayé, parce qu'il pourrait s'exécuter. C'est
@@ -303,6 +304,61 @@ le signataire. C'est ainsi que la première signature de l'agent `winter_26-27_k
 `nest-trading-bot/docs/hyperliquid/live-check.md`, « L'agent expiré, puis la première signature du nouveau ».
 
 ⚠️ Un seul cas, un seul motif, et sur `order` : la forme par ordre d'un `modify` seul reste non observée.
+
+### Le `modify` refusé dans un lot, et un refus sous le minimum (mesuré le 2026-11-09)
+
+**Trois cas, chacun une fois.** Sonde `nest-trading-bot/scripts/live-check/modify-refused-api.ts`, mainnet, compte `rabby_01`,
+**BTC**, ALO d'achat de 0,00019 BTC (≈ 12 $) posés à 15 % sous le marqué ; gateway `60f9af6` et bot `476435e`, ni l'un ni
+l'autre modifié localement. Routes ordinaires `/hyperliquid/order/modify` et `/hyperliquid/order/batch-modify`, que le gateway
+relaie **brutes** (`hyperliquid-trade.controller.ts`), et non la famille `batch-protective` qui interprète la réponse. Le
+déroulé, les pièces et le coût : `nest-trading-bot/docs/hyperliquid/live-check.md`, « Le `modify` refusé, deuxième série ».
+
+- **M1, un `modify` seul réduit sous le minimum** (même prix, 0,00006 BTC, 3,81 $) : HTTP 200,
+  `{"status":"err","response":"Error placing new order during modify: Order must have minimum value of $10."}`. **L'ordre
+  d'origine est annulé**, horodaté à l'instant du `modify`. Ce refus ne dépend que de la requête : l'exchange pouvait refuser
+  sans toucher au carnet, et il a annulé d'abord. Les deux classes de refus d'un `modify` seul observées (le croisement, qui
+  dépend du carnet, le 2026-10-27 ; le montant, aujourd'hui) annulent donc l'ordre.
+- **M2a, un `batchModify` de deux entrées, la première sur un ordre mort** : HTTP 200,
+  `{"status":"ok","response":{"type":"order","data":{"statuses":[{"error":"Cannot modify canceled or filled order"},{"resting":{"oid":599951351972}}]}}}`.
+  Un statut **par entrée, dans l'ordre des entrées**. La seconde est appliquée comme un `modify` réussi : l'ancien oid passe
+  `canceled` et le nouveau naît à la même milliseconde. L'entrée morte n'a rien recréé.
+- **M2b, un `batchModify` de deux entrées, la première croisant (post-only)** : HTTP 200,
+  `{"status":"ok","response":{"type":"order","data":{"statuses":[{"error":"Error placing new order during modify: Post only order would have immediately matched, bbo was 74940@74941."},{"resting":{"oid":599960210770}}]}}}`.
+  **L'ordre de l'entrée refusée est annulé**, et la seconde entrée est appliquée : les trois changements (annulation de l'ordre
+  refusé, annulation et remplacement de l'autre) portent la même milliseconde.
+
+Avec les mesures précédentes, le tableau des deux niveaux se complète :
+
+| niveau           | forme                                       | observé                                                                                                                                   |
+| ---------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| l'action entière | `{"status":"err","response":"<chaîne>"}`    | agent inconnu ou expiré (2026-10-29) ; `modify` **seul** refusé : croisement et ordre mort (2026-10-27), montant sous le minimum (2026-11-09) |
+| un ordre         | `ok`, puis `statuses[i].error` (une chaîne) | `order` : marge insuffisante (2026-11-05, 2026-11-09) ; `batchModify` : ordre mort, croisement (2026-11-09)                                 |
+
+**Ce que ça établit.**
+
+- **Le même refus change de forme selon l'action.** « Error placing new order during modify: Post only… » est une enveloppe
+  `err` pour un `modify` seul, une erreur par entrée pour un `batchModify`. Lire un `modify` seul et un lot avec le même code
+  n'est donc pas possible : il faut lire **les deux niveaux** dans les deux cas.
+- **`statuses[i].error` sur un `batchModify` ne veut pas dire « cet ordre est intact ».** Pour un ordre vivant refusé (M2b),
+  l'ordre n'existe plus. Pour un ordre mort (M2a), il n'existait déjà plus. Dans les deux cas observés, **l'oid visé est mort
+  après la réponse**.
+- **Un lot n'est pas atomique.** Une entrée en échec n'empêche pas la suivante, même placée après elle.
+- **L'erreur unique de pré-validation pour tout le lot** (la crainte de `EXCHANGE_BATCH_MODIFY_UNMATCHED`, plus bas) ne s'est
+  pas produite pour ces deux motifs : les statuts se comptaient un par entrée.
+
+**Ce que ça change pour le réalignement** (`smart-order.service.ts`, `placeBatchProtectiveOrders`), lu dans le code, non
+exercé : sur `statuses[i].error`, le repli **annule** l'oid visé puis **recrée** l'ordre avec les mêmes paramètres. D'après
+M2a et M2b, cet oid est déjà mort : l'annulation échouera (seulement journalisée, `Failed to cancel order`) et la recréation
+reprend des paramètres que l'exchange vient de refuser. Si elle échoue à son tour, `Order creation failed` est journalisé, mais
+**rien n'est levé** et le compte rendu rendu au bot ne dit pas qu'un ordre manque. Pour un stop : la position reste sans
+protection et le bot ne l'apprend pas. ⚠️ Mesuré sur des ALO au repos, **jamais sur des déclencheurs** `reduceOnly`, ceux que le
+réalignement modifie : leurs motifs de refus (prix de déclenchement, ordre exécuté entre la lecture et le lot) ne sont pas
+mesurés, et rien ne dit qu'ils annulent aussi. Le cas M2a est en revanche réaliste tel quel pour le bot : un take-profit exécuté
+entre la lecture des ordres ouverts et le lot.
+
+⚠️ **Ce qui n'est pas établi.** Une seule observation par cas. Un lot dont toutes les entrées échouent, un lot de plus de deux
+entrées, un déclencheur dans un lot, un `Gtc` modifié pour croiser (le 325) : non essayés. Un `modify` seul répondu `ok` avec
+`statuses[i].error` : toujours jamais observé, ce qui ne prouve pas qu'il n'existe pas.
 
 ### Ce que le canal d'annonces dit (messages 306 à 384 relevés le 2026-10-27, ceux qui nous concernent ci-dessous)
 
@@ -419,7 +475,9 @@ distinguer l'ancienne base de la nouvelle : lecture, non éprouvée.
   ignore quelle forme l'exchange emploierait ; quatre sont possibles, lues dans le code, aucune observée :
   - un refus **par ordre** dans une réponse `ok` (`statuses[i].error`) : inchangé. `Failed to modify order` dans le journal, puis
     repli par annulation + recréation, avec la seconde sans protection que `batchModify` évitait. Ce repli a maintenant un test,
-    il n'en avait aucun ;
+    il n'en avait aucun. ⚠️ **C'est la forme observée le 2026-11-09** pour un lot (sur des ALO), et l'oid visé était alors déjà
+    mort : l'annulation du repli vise un ordre mort, et une recréation qui échoue n'est que journalisée (voir « Le `modify`
+    refusé dans un lot ») ;
   - une réponse qui n'est **pas un `ok`** — l'enveloppe `{ status: 'err', response }` en HTTP 200, `{}`, `null`, rien. _Avant_ : le
     bloc sautait sans un mot, les annulations et les créations du même passage partaient, et le gateway rendait un compte rendu
     d'apparence normale ; le bot lisait `protected` dès que ce compte rendu n'était pas vide, et ne signalait « rien appliqué »
@@ -465,14 +523,16 @@ distinguer l'ancienne base de la nouvelle : lecture, non éprouvée.
 - **Le texte réel d'un refus** de `modify` sur un déclencheur : les tests emploient un libellé marqué « placeholder », que le code
   ne lit pas. La doc ne le donne pas non plus (voir plus haut : onglets de réponse vides). Que `err` veuille dire « rien n'a été
   modifié » était le sens du format supposé ; **mesuré faux pour un `modify` seul** (2026-10-27, voir « Ce qu'un `modify` refusé
-  répond » : l'ordre d'origine est annulé), non mesuré pour un lot. Le message dit « not reported as applied » et demande de
+  répond » : l'ordre d'origine est annulé). Pour un lot, le refus d'une entrée n'arrive pas en `err` mais en `statuses[i].error`,
+  et annule aussi son ordre (2026-11-09, sur des ALO : « Le `modify` refusé dans un lot »). Le message dit « not reported as applied » et demande de
   relire le carnet, ce qui reste la bonne réaction. Le texte réel d'un refus de `modify` est connu pour un cas sans déclencheur
   (deux libellés, dans cette même section), pas pour un déclencheur.
 - **Que l'erreur unique de pré-validation existe pour un `batchModify`, et sous quelle enveloppe** (`err`, ou `ok` avec un seul
   statut). La page des erreurs, lue en brut, décrit ce cas pour les **ordres et les annulations** : une pré-validation en échec
   rend une seule erreur pour tout le lot, la réponse pouvant être dupliquée n fois avant d'être remise au callback, et elle
   recommande de traiter ce cas. Elle ne dit pas qui duplique, ni sur le fil ni dans le SDK, ni rien de `modify`. Les deux
-  enveloppes sont couvertes, aucune n'est observée. Elle dit aussi que ces erreurs sont une fonction déterministe du payload ; la
+  enveloppes sont couvertes, aucune n'est observée : le 2026-11-09, un ordre mort puis un croisement en tête de lot ont rendu
+  un statut par entrée, pas une erreur unique. Elle dit aussi que ces erreurs sont une fonction déterministe du payload ; la
   règle de `a` en est peut-être une (type de l'ordre et drapeau), mais sa clause « GTC non exécutable » dépend du carnet :
   **inféré, non tranché**.
 - **Avec une seule modification, un unique statut est lu comme celui de cet ordre** (repli par annulation + recréation), alors
