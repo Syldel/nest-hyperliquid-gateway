@@ -1039,8 +1039,10 @@ export class SmartOrderService {
    * mainnet (`docs/sources.md`, « Le `modify` refusé dans un lot ») : dans les deux cas observés, l'oid visé était DÉJÀ mort
    * après la réponse. Un ordre mort reste mort (« Cannot modify canceled or filled order »), et un ordre vivant refusé est
    * annulé par son refus (« Error placing new order during modify »). L'annulation du repli visait donc un ordre qui
-   * n'existait plus. ⚠️ Mesuré sur des ALO, jamais sur les déclencheurs que ce service modifie : un refus de déclencheur
-   * qui laisserait l'ordre en place reste possible, d'où la lecture plutôt qu'une nouvelle supposition dans l'autre sens.
+   * n'existait plus. Le 2026-11-12, l'autre cas s'est montré, sur un déclencheur : « Attempted to modify to invalid new
+   * order » est refusé AVANT toute annulation, et le stop est resté ouvert (`docs/sources.md`, « Deux sortes de refus de
+   * `modify` »). Les deux existent donc : c'est pourquoi le statut se lit, au lieu d'une supposition dans un sens ou dans
+   * l'autre. ⚠️ Un refus « Error placing new order » sur un déclencheur reste non mesuré.
    *
    * - `open` : le repli d'avant, annuler puis recréer ;
    * - exécuté (`filled`, `triggered`) : ne PAS recréer. La protection a joué, la position a changé, et le plan calculé

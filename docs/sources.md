@@ -377,6 +377,39 @@ paire comptée `protected` sans stop.
 entrées, un déclencheur dans un lot, un `Gtc` modifié pour croiser (le 325) : non essayés. Un `modify` seul répondu `ok` avec
 `statuses[i].error` : toujours jamais observé, ce qui ne prouve pas qu'il n'existe pas.
 
+### Deux sortes de refus de `modify`, et un GTC transformé en ALO (mesuré le 2026-11-12)
+
+**Une observation par cas.** Sonde `nest-trading-bot/scripts/live-check/modify-refused-api.ts` (troisième série), application
+mobile et interface Hyperliquid, mainnet, compte `rabby_01`, BTC ; gateway `0fa6204`, bot `60a4bab`, mobile `29f6c45`. Le
+déroulé : `nest-trading-bot/docs/hyperliquid/live-check.md`, « Le `modify` refusé, troisième série ».
+
+- **Un GTC modifié pour croiser** (TIF `Gtc` envoyée, prix 2 % au-dessus) : HTTP 200,
+  `{"status":"err","response":"Error placing new order during modify: Post only order would have immediately matched, bbo was 73452@73453."}`,
+  et **l'ordre d'origine est annulé**, sans exécution. Le message 325 est donc appliqué : l'exchange l'a traité en ALO.
+- **Un stop reduce-only modifié en ALO de vente** : HTTP 200, `{"status":"err","response":"Attempted to modify to invalid new order"}`,
+  et **le stop reste ouvert**. Dans un `batchModify` dont il est la première entrée : `ok`,
+  `statuses: [{"error":"Attempted to modify to invalid new order"}, {"resting":{"oid":…}}]`, le stop toujours ouvert, et le
+  take-profit de la seconde entrée remplacé (nouvel oid, même milliseconde).
+- **Un `modify` envoyé par l'application sur un ordre déjà annulé** : `{"status":"err","response":"Cannot modify canceled or filled order"}`,
+  comme le 2026-10-27.
+
+**Ce que ça établit : le texte dit si l'ordre d'origine existe encore.**
+
+| texte du refus                                     | ordre d'origine                | observé                                                                            |
+| -------------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------- |
+| « Error placing new order during modify: … »       | **annulé**, puis le nouveau refusé | croisement d'un ALO (10-27, 11-09 en lot), montant sous 10 $ (11-09), GTC transformé (11-12) |
+| « Attempted to modify to invalid new order »       | **intact**, refusé avant       | déclencheur modifié en ordre limite (11-12, seul et en lot)                       |
+| « Cannot modify canceled or filled order »         | déjà mort                      | 10-27, 11-09 en lot, 11-12 depuis l'app                                            |
+
+« Un `modify` refusé annule l'ordre » n'est donc **pas** une règle : c'est vrai du premier texte, faux du deuxième. Le gateway
+ne s'appuie pas sur le texte, il lit le statut de l'oid (`planAfterRefusedModify`) : un ordre encore `open` y suit l'ancien
+repli (annuler, recréer), ce qui convient au deuxième cas. Lire le texte serait plus économe, mais un libellé peut changer sans
+annonce : la lecture du statut reste la règle.
+
+⚠️ **Ce qui n'est pas établi.** Un refus du premier texte sur un **déclencheur** : aucun moyen sûr de le provoquer (le minimum ne
+s'applique pas aux déclencheurs, un mauvais côté exécute). On ne sait donc toujours pas si un réalignement refusé de cette façon
+emporte un stop. Une vente GTC qui croise : non essayée. Une seule observation par ligne du tableau, sauf la troisième.
+
 ### Ce que le canal d'annonces dit (messages 306 à 384 relevés le 2026-10-27, ceux qui nous concernent ci-dessous)
 
 **Le statut de ce relevé : un miroir tiers.** Le canal Telegram `hyperliquid_api` (« Hyperliquid API Announcements », 2 878
