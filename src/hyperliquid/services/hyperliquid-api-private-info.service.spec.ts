@@ -68,3 +68,49 @@ describe('HyperliquidApiPrivateInfoService.getHistoricalOrders', () => {
     );
   });
 });
+
+/**
+ * Le compteur de la limite par adresse. Ce que ce test fige : l'appel passe par le garde de débit avec le poids d'une
+ * lecture ordinaire (20), il porte le portefeuille de l'utilisateur, et la réponse est rendue telle quelle. La réponse
+ * du double est l'exemple de la doc (`info-endpoint`, « Query user rate limits »), pas une mesure.
+ */
+describe('HyperliquidApiPrivateInfoService.getUserRateLimit', () => {
+  const wallet = '0x0000000000000000000000000000000000000001';
+  const realFetch = global.fetch;
+  const DOC_EXAMPLE = {
+    cumVlm: '2854574.593578',
+    nRequestsUsed: 2890,
+    nRequestsCap: 2864574,
+    nRequestsSurplus: 0,
+  };
+
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  it('asks Hyperliquid for the user counter, weighs it 20, and hands it back', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      status: 200,
+      ok: true,
+      json: () => Promise.resolve(DOC_EXAMPLE),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const rateGuard = { beforeCall: jest.fn(), recordResponse: jest.fn() };
+    const service = new HyperliquidApiPrivateInfoService(
+      { walletAddress: wallet } as never,
+      rateGuard as never,
+    );
+
+    const answer = await service.getUserRateLimit();
+
+    expect(answer).toEqual(DOC_EXAMPLE);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://api.hyperliquid.xyz/info');
+    expect(JSON.parse(init.body as string)).toEqual({
+      type: 'userRateLimit',
+      user: wallet,
+    });
+    expect(rateGuard.beforeCall).toHaveBeenCalledWith('info', 20);
+  });
+});

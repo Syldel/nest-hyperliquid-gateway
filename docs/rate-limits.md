@@ -30,6 +30,16 @@ USDC échangé depuis la création de l'adresse. Au-delà, une requête toutes l
 se signale par un message du type « Too many cumulative requests sent (x > y) for cumulative
 volume traded $z ».
 
+**Le compteur se lit** : `GET /hyperliquid/info/user-rate-limit` (type `userRateLimit`, poids 20,
+depuis le 2026-11-14), affiché par `nest-trading-bot/scripts/live-check/account-state.ts`. Mesuré
+ce jour-là sur `rabby_01` : `nRequestsCap` 61638, soit **exactement 10 000 + les 51 638 $ de volume
+cumulé** — le plafond comprend donc la réserve initiale —, `nRequestsUsed` 2288,
+`nRequestsSurplus` 0. Marge avant le ralentissement : `cap − used`, 59 350 actions. La doc (relue
+en brut) ne compte que les actions, pas les lectures, un lot de n ordres pour n, et donne aux
+annulations un plafond à part, plus large. ⚠️ Elle ne dit pas si une action **refusée** compte, ni
+ce que désigne « reserved » dans les formules de `nRequestsUsed` et `nRequestsSurplus` — sans
+doute les actions achetées par `reserveRequestWeight`.
+
 ## Où est le garde-fou
 
 Tout le trafic vers Hyperliquid passe par **deux** fonctions :

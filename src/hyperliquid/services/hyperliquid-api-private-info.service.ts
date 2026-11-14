@@ -14,6 +14,7 @@ import {
   HlActiveAssetData,
   AccountAbstractionMode,
   HlUserFees,
+  HlUserRateLimit,
 } from '@syldel/hl-shared-types';
 import { UserContextService } from '../../auth/user-context.service';
 import { HyperliquidApiBaseInfoService } from './hyperliquid-api-base-info.service';
@@ -257,6 +258,23 @@ export class HyperliquidApiPrivateInfoService extends HyperliquidApiBaseInfoServ
     return this.executeInfo<HlUserFees>(
       {
         type: 'userFees',
+        user: this.userContext.walletAddress,
+      },
+      isTestnet,
+    );
+  }
+
+  /**
+   * Le compteur de la limite **par adresse** : ce que le compte a consommé de ses actions autorisées.
+   *
+   * Cette limite est la seule qui puisse empêcher de poser un stop sans qu'aucun 429 ne prévienne avant : épuisée, elle
+   * ne laisse plus passer qu'une action toutes les 10 s (doc `rate-limits-and-user-limits`). Elle ne compte que les
+   * actions, pas les lectures — mais cette lecture-ci pèse 20 sur la limite par IP, comptée par le garde.
+   */
+  async getUserRateLimit(isTestnet: boolean = false): Promise<HlUserRateLimit> {
+    return this.executeInfo<HlUserRateLimit>(
+      {
+        type: 'userRateLimit',
         user: this.userContext.walletAddress,
       },
       isTestnet,

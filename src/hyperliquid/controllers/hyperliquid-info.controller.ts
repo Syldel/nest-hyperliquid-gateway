@@ -20,6 +20,7 @@ import { AssetRegistryService } from '../services/asset-registry.service';
 import {
   CollateralBalanceResponse,
   HlActiveAssetData,
+  HlUserRateLimit,
   HlUserFees,
 } from '@syldel/hl-shared-types';
 import { HyperliquidCollateralService } from '../services/hyperliquid-collateral.service';
@@ -244,6 +245,22 @@ export class HyperliquidInfoController {
   @UseGuards(UserAuthGuard)
   async getUserFees(@Query('testnet') testnet?: string): Promise<HlUserFees> {
     return this.privateInfoService.getUserFees(this.castTestnetFlag(testnet));
+  }
+
+  /**
+   * Le compteur de la limite par adresse de l'utilisateur authentifié (type `userRateLimit`, poids 20).
+   *
+   * Lu par le bot (`account-state.ts`), pour savoir quelle marge reste avant qu'Hyperliquid ne ralentisse les actions
+   * du compte à une toutes les 10 s.
+   */
+  @Get('user-rate-limit')
+  @UseGuards(UserAuthGuard)
+  async getUserRateLimit(
+    @Query('testnet') testnet?: string,
+  ): Promise<HlUserRateLimit> {
+    return this.privateInfoService.getUserRateLimit(
+      this.castTestnetFlag(testnet),
+    );
   }
 
   /**
