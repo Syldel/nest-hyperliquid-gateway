@@ -365,6 +365,22 @@ refusée, un statut de lot sans oid ni erreur) fait lever **422 `PROTECTIVE_PLAN
 qui a été appliqué. Le bot marque alors la paire `unprotected` : alerte, et reprise à la minute. 14 tests, dont 11 qui tombent
 sur l'ancien code, et deux mutations éprouvées (annuler toujours ; traiter un ordre exécuté comme mort).
 
+**Une annulation non confirmée aussi, depuis le 2026-11-14.** Une annulation prévue du plan (un ordre en trop, ou l'ordre
+`open` d'un `modify` refusé) que l'exchange ne confirme pas `success` n'était que journalisée : l'ordre périmé pouvait rester
+au carnet, à côté de sa recréation, et le bot comptait la paire `protected` jusqu'à son passage suivant — 6 heures pour une
+1D. Elle rejoint désormais les écarts qui font lever `PROTECTIVE_PLAN_INCOMPLETE` (« may still be on the book »), toujours en
+fin de plan. Trois cas sont lus comme une annulation non faite : un statut `{ error }`, un statut absent (la page des
+erreurs dit qu'une pré-validation en échec rend **une** erreur pour tout le lot), une réponse qui n'est pas un `ok` avec une
+liste. Cette dernière levait une `TypeError` **avant** la pose des nouveaux stops ; elle est lue avec `?.`, et les créations
+partent. Les formes de réponse viennent de la doc (`exchange-endpoint`, « Cancel order(s) », relue en brut le 2026-11-14 :
+`["success"]` et `[{ "error": "Order was never placed, already canceled, or filled." }]`), **pas d'une mesure**.
+
+Le code reste `PROTECTIVE_PLAN_INCOMPLETE`, par décision : le bot dira `unprotected` pour une position peut-être protégée en
+double. C'est moins exact qu'un code dédié, mais la suite est la bonne — alerte, et reprise qui relit le carnet — sans
+modéliser un code de plus dans le bot. « already canceled, or filled » ne se tranche pas : annulé, l'ordre a disparu comme
+voulu ; exécuté, la position a changé sous le plan. On le rapporte dans les deux cas. 7 tests, trois mutations éprouvées
+(l'échec seulement journalisé ; la réponse lue sans `?.` ; un statut absent compté comme succès).
+
 ⚠️ Mesuré sur des ALO au repos, **jamais sur des déclencheurs** `reduceOnly`, ceux que le réalignement modifie : leurs motifs de
 refus (prix de déclenchement, ordre exécuté entre la lecture et le lot) ne sont pas mesurés, et rien ne dit qu'ils annulent
 aussi. C'est pourquoi le statut se lit : la décision tient dans les deux cas. Le cas M2a est en revanche réaliste tel quel pour
@@ -595,9 +611,8 @@ distinguer l'ancienne base de la nouvelle : lecture, non éprouvée.
   protection. À décider quand on connaîtra le texte réel du refus d'un lot (celui d'un `modify` seul est connu depuis le 2026-10-27, et ce refus-là a annulé l'ordre d'origine : relire le carnet avant tout repli).
 - **Trois trous voisins, dont deux traités le 2026-11-09** par le même mécanisme (consigner, finir, lever
   `PROTECTIVE_PLAN_INCOMPLETE`) : une création qui reçoit une réponse non `ok` ne lève plus de `TypeError`, et un élément `null`
-  ou sans oid ni erreur dans une liste de la bonne longueur n'est plus sauté. **Reste** : l'échec d'une annulation prévue
-  (réponse non `ok`) n'est que journalisé. Il laisse un ordre de trop, pas une position nue, ce qui explique qu'il n'ait pas été
-  traité en même temps.
+  ou sans oid ni erreur dans une liste de la bonne longueur n'est plus sauté. L'échec d'une annulation prévue, qui n'était que
+  journalisé, l'est aussi depuis le 2026-11-14 (« Une annulation non confirmée aussi », plus haut).
 - **Si une écriture suivante du même plan lève avant la fin**, le refus n'existe plus que dans le journal (un test le fige).
 
 C'est le cas inverse de celui qui a fait écrire ce document : ici la doc est précise et la mesure la dément **à la lettre** —

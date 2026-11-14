@@ -1271,8 +1271,8 @@ export class SmartOrderService {
       | { code: string; logged: string; thrown: string }
       | undefined;
 
-    // Chaque protection du plan qui ne sera PAS en place à la fin, en une phrase : une modification refusée qu'on ne peut
-    // pas rétablir, une création refusée. Même règle que `modifyFailure` : consigné tout de suite, levé en fin de plan.
+    // Chaque écart du plan à la fin, en une phrase : une modification refusée qu'on ne peut pas rétablir, une création
+    // refusée — une protection qui manque —, ou une annulation non confirmée — un ordre périmé peut-être encore au carnet. Même règle que `modifyFailure` : consigné tout de suite, levé en fin de plan.
     // Avant le 2026-11-09, ces cas n'étaient que journalisés, et le bot recevait un compte rendu où il manquait un stop sans
     // que rien ne le dise : il lit `protected` dès qu'une autre protection a bougé (`hl-protection.service.ts`).
     const incomplete: string[] = [];
@@ -1375,6 +1375,21 @@ export class SmartOrderService {
     }
 
     // 5️⃣ Cancels
+    //
+    // Une annulation que l'exchange ne confirme pas `success` va dans `incomplete`, comme une création refusée. Avant le
+    // 2026-11-14, elle n'était que journalisée : l'ordre périmé — un ancien stop, un TP à un niveau que la stratégie ne
+    // demande plus — pouvait rester au carnet, et le bot comptait la paire `protected` jusqu'à son passage suivant
+    // (6 heures pour une 1D). Le 422 de fin de plan la lui fait marquer `unprotected` : alerte, et reprise à la minute,
+    // qui relit le carnet.
+    //
+    // La réponse se lit sans supposer sa forme (`?.`) : une `TypeError` ici, avant l'étape 6, empêchait la pose des
+    // nouveaux stops — la même faute que celle corrigée le 2026-10-27 sur les créations. Les deux formes de réponse sont
+    // celles de la doc (`exchange-endpoint`, « Cancel order(s) », lue en brut le 2026-11-14) : `statuses: ["success"]`, et
+    // `statuses: [{ error: "Order was never placed, already canceled, or filled." }]`. La page des erreurs ajoute qu'une
+    // pré-validation en échec rend UNE seule erreur pour tout le lot : un statut absent n'est donc pas une confirmation.
+    //
+    // « already canceled, or filled » ne se tranche pas : annulé, l'ordre a disparu comme voulu ; exécuté, la position a
+    // changé sous le plan. On le rapporte, et la reprise relit le carnet.
     const cancels = [...tpDiff.cancels, ...slDiff.cancels];
 
     if (cancels.length > 0) {
@@ -1386,25 +1401,40 @@ export class SmartOrderService {
         isTestnet,
       );
 
-      if (cancelRes.status === 'ok') {
-        const statuses = cancelRes.response.data.statuses;
+      const kindOf = (oid: HLOid) =>
+        tpDiff.cancels.includes(oid) ? 'TP' : 'SL';
+      const statuses: unknown =
+        cancelRes?.status === 'ok'
+          ? cancelRes.response?.data?.statuses
+          : undefined;
+
+      if (Array.isArray(statuses)) {
         cancels.forEach((oid, index) => {
-          const status = statuses[index];
+          const status: unknown = statuses[index];
           if (status === 'success') {
             if (tpDiff.cancels.includes(oid)) {
               result.tp.cancelled.push(oid);
             } else {
               result.sl.cancelled.push(oid);
             }
-          } else {
-            this.logger.warn(
-              `Failed to cancel order ${oid}: ${JSON.stringify(status)}`,
-            );
+            return;
           }
+          const raw = JSON.stringify(status) ?? 'no status';
+          this.logger.error(`Failed to cancel order ${oid}: ${raw}`);
+          incomplete.push(
+            `${kindOf(oid)} ${oid}: the cancel was not confirmed (${raw}), so it may still be on the book`,
+          );
         });
       } else {
-        const statusMsg = cancelRes ? String(cancelRes.status) : 'No response';
-        this.logger.error(`Cancel batch request failed: ${statusMsg}`);
+        const raw = JSON.stringify(cancelRes) ?? 'no answer';
+        this.logger.error(
+          `Cancel batch of ${cancels.length} protective order(s) not accepted: ${raw}`,
+        );
+        for (const oid of cancels) {
+          incomplete.push(
+            `${kindOf(oid)} ${oid}: the cancel batch was not accepted (${raw}), so it may still be on the book`,
+          );
+        }
       }
     }
 

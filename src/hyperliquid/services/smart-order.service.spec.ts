@@ -697,6 +697,15 @@ describe('SmartOrderService', () => {
       ]);
 
       getAssetId.mockReturnValue(4);
+      // Un statut par annulation, comme l'exchange : le double par défaut n'en rend qu'un, et depuis le 2026-11-14 une
+      // annulation sans statut n'est plus comptée comme faite.
+      cancelOrderSpy.mockResolvedValue({
+        status: 'ok',
+        response: {
+          type: 'cancel',
+          data: { statuses: ['success', 'success'] },
+        },
+      });
 
       const params = { assetName, isBuy }; // pas de nouveaux ordres
 
@@ -1114,6 +1123,144 @@ describe('SmartOrderService', () => {
      * neutre, que le code ne lit pas. Seule l'enveloppe `{ status: 'err', response: <texte> }` est connue, c'est celle que
      * `executeWithNonce` teste déjà (avec un texte mesuré, pour la limite par adresse).
      */
+    /**
+     * Une annulation prévue que l'exchange ne confirme pas. Avant le 2026-11-14, elle n'était que journalisée : l'ordre
+     * périmé pouvait rester au carnet, et le bot comptait la paire couverte. Les formes de réponse sont celles de la doc
+     * (`exchange-endpoint`, « Cancel order(s) », lue en brut le 2026-11-14), pas une mesure.
+     */
+    describe('a cancel the exchange does not confirm', () => {
+      // Le SL 102 est en trop (aucun SL voulu) ; un TP neuf est à créer : une annulation et une création dans le même plan.
+      const plan = {
+        assetName,
+        isBuy,
+        tp: [{ price: '9300', sz: '0.4' }],
+      };
+      const missingOrder =
+        'Order was never placed, already canceled, or filled.';
+
+      const failureOf = async (run: Promise<unknown>) => {
+        const error = await run.then(
+          () => undefined,
+          (e: unknown) => e,
+        );
+        expect(error).toBeInstanceOf(HyperliquidGatewayException);
+        return error as HyperliquidGatewayException;
+      };
+
+      beforeEach(() => {
+        getFrontendOpenOrdersSpy.mockResolvedValue([
+          makeOrderFromSpec('102_0.3_8000_sl', assetName),
+        ]);
+        placeOrderSpy.mockResolvedValue({
+          status: 'ok',
+          response: {
+            type: 'order',
+            data: { statuses: [{ resting: { oid: 501 } }] },
+          },
+        });
+      });
+
+      it('reports the order as maybe still on the book, with the exchange text', async () => {
+        cancelOrderSpy.mockResolvedValue({
+          status: 'ok',
+          response: {
+            type: 'cancel',
+            data: { statuses: [{ error: missingOrder }] },
+          },
+        });
+
+        const error = await failureOf(
+          service.placeBatchProtectiveOrders(plan, false),
+        );
+
+        expect(error.getStatus()).toBe(422);
+        expect(error.getResponse()).toMatchObject({
+          error: 'PROTECTIVE_PLAN_INCOMPLETE',
+        });
+        expect(error.message).toContain('SL 102');
+        expect(error.message).toContain('may still be on the book');
+        expect(error.message).toContain(missingOrder);
+        // et rien n'est compté comme annulé
+        expect(error.message).toContain('"sl":{"cancelled":[]');
+      });
+
+      it('still sends the creations of the plan', async () => {
+        cancelOrderSpy.mockResolvedValue({
+          status: 'ok',
+          response: {
+            type: 'cancel',
+            data: { statuses: [{ error: missingOrder }] },
+          },
+        });
+
+        const error = await failureOf(
+          service.placeBatchProtectiveOrders(plan, false),
+        );
+
+        expect(placeOrderSpy).toHaveBeenCalledTimes(1);
+        expect(error.message).toContain('"tp":{"cancelled":[],"created":[501]');
+      });
+
+      it.each([
+        [
+          'an err envelope',
+          {
+            status: 'err',
+            response: '<placeholder, not a measured message>',
+          },
+        ],
+        // Une forme jamais vue, ni documentée : l'ancien code levait une `TypeError` sur `statuses[index]`, avant la
+        // pose des nouveaux stops.
+        [
+          'an ok with no statuses',
+          { status: 'ok', response: { type: 'cancel' } },
+        ],
+        ['no answer at all', undefined],
+      ])(
+        'reads %s as a cancel not done, without stopping the plan',
+        async (_label, answer) => {
+          cancelOrderSpy.mockResolvedValue(answer);
+
+          const error = await failureOf(
+            service.placeBatchProtectiveOrders(plan, false),
+          );
+
+          expect(error.getResponse()).toMatchObject({
+            error: 'PROTECTIVE_PLAN_INCOMPLETE',
+          });
+          expect(error.message).toContain('SL 102');
+          expect(placeOrderSpy).toHaveBeenCalledTimes(1);
+        },
+      );
+
+      // La page des erreurs : une pré-validation en échec rend UNE erreur pour tout le lot. Le statut manquant n'est pas
+      // un succès, et le statut présent n'est attribué qu'à sa propre position.
+      it('does not count a cancel that has no status of its own', async () => {
+        getFrontendOpenOrdersSpy.mockResolvedValue([
+          makeOrderFromSpec('101_0.5_9000_tp', assetName),
+          makeOrderFromSpec('102_0.3_8000_sl', assetName),
+        ]);
+        cancelOrderSpy.mockResolvedValue({
+          status: 'ok',
+          response: { type: 'cancel', data: { statuses: ['success'] } },
+        });
+
+        const error = await failureOf(
+          service.placeBatchProtectiveOrders({ assetName, isBuy }, false),
+        );
+
+        expect(error.message).toContain('SL 102');
+        expect(error.message).not.toContain('TP 101');
+        expect(error.message).toContain('"tp":{"cancelled":[101]');
+      });
+
+      it('throws nothing when every cancel is confirmed', async () => {
+        await expect(
+          service.placeBatchProtectiveOrders(plan, false),
+        ).resolves.toMatchObject({ sl: { cancelled: [102] } });
+      });
+    });
+
     describe('a batchModify the exchange does not accept', () => {
       // Une cible périmée de deux ordres, plus un TP à créer : deux modifications et une création dans le même plan.
       const desired = {
