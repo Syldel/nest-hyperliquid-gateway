@@ -72,6 +72,26 @@ type PositionProtectiveParams = Pick<
  */
 const MARKET_TRIGGER_LIMIT_FACTOR = { sell: '0.9', buy: '1.1' } as const;
 
+/**
+ * Les seuls ordres ouverts que `placeBatchProtectiveOrders` considère comme des protections
+ * existantes, à déplacer ou à annuler — par leur `orderType` **exact**.
+ *
+ * Le rangement se faisait sur des morceaux du nom, avec un repli : tout déclencheur reduce-only
+ * qui n'était pas un take-profit devenait un stop. Le trailing stop natif d'Hyperliquid (ajouté
+ * le 2026-09-21) se lit `"Trailing Stop Market"`, `isTrigger: true`, `reduceOnly: true` quand il
+ * protège une position (mesuré le 2026-11-16 sur ETH : `nest-trading-bot/docs/hyperliquid/live-check.md`,
+ * « Le trailing stop natif »). Il devenait donc un stop existant, que le diff **modifiait** en stop
+ * ordinaire par `batchModify` ou **annulait** comme surplus. Un type absent de cette table n'est
+ * plus jamais touché : il est journalisé, et laissé à qui l'a posé.
+ */
+const PROTECTIVE_KIND_BY_ORDER_TYPE: ReadonlyMap<string, HLProtectiveKind> =
+  new Map([
+    ['Stop Market', 'sl'],
+    ['Stop Limit', 'sl'],
+    ['Take Profit Market', 'tp'],
+    ['Take Profit Limit', 'tp'],
+  ]);
+
 @Injectable()
 export class SmartOrderService {
   private readonly logger = new Logger(SmartOrderService.name);
@@ -1187,19 +1207,35 @@ export class SmartOrderService {
       isTestnet,
     );
 
-    function mapKind(orderType?: string): HLProtectiveKind {
-      const type = orderType?.toLowerCase() || '';
-      if (type.includes('take profit')) return 'tp';
-      if (type.includes('stop')) return 'sl';
-      return 'sl';
+    const triggers = openOrders
+      .filter((o) => o.coin === assetName)
+      .filter((o) => o.reduceOnly && o.isTrigger);
+
+    // Un déclencheur reduce-only d'un type inconnu n'est ni modifié ni annulé, mais il se dit : il
+    // peut fermer la position en même temps que les protections posées ici.
+    const unmanaged = triggers.filter(
+      (o) => !PROTECTIVE_KIND_BY_ORDER_TYPE.has(o.orderType),
+    );
+    if (unmanaged.length > 0) {
+      this.logger.warn(
+        `[${assetName}] ${unmanaged.length} reduce-only trigger order(s) of a type this gateway does not manage, left untouched: ` +
+          unmanaged
+            .map(
+              (o) =>
+                `${o.orderType} oid ${o.oid} (${o.side === 'A' ? 'SELL' : 'BUY'} ${o.sz}, "${o.triggerCondition}")`,
+            )
+            .join('; '),
+      );
     }
 
-    const existing: ExistingProtectiveOrder[] = openOrders
-      .filter((o) => o.coin === assetName)
-      .filter((o) => o.reduceOnly && o.isTrigger)
-      .map((o) => ({
+    const existing: ExistingProtectiveOrder[] = triggers
+      .flatMap((o) => {
+        const kind = PROTECTIVE_KIND_BY_ORDER_TYPE.get(o.orderType);
+        return kind === undefined ? [] : [{ order: o, kind }];
+      })
+      .map(({ order: o, kind }) => ({
         oid: o.oid,
-        kind: mapKind(o.orderType),
+        kind,
         // Écrit comme la demande le sera. Hyperliquid rend un prix entier avec
         // une décimale (« 1103.0 ») quand `formatPrice` rend « 1103 » : les
         // comparer tels quels jugeait changé un ordre identique, et le modifiait

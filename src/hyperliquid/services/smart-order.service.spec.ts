@@ -720,6 +720,76 @@ describe('SmartOrderService', () => {
       );
     });
 
+    describe('a native trailing stop on the same position', () => {
+      /**
+       * Recopié de `frontendOpenOrders` le 2026-11-16 (ETH, posé depuis la ligne de position de
+       * l'interface Hyperliquid : `nest-trading-bot/docs/hyperliquid/live-check.md`, « Le trailing
+       * stop natif »), seul `coin` changé pour l'actif de ces tests. Reduce-only et `isTrigger` : il
+       * passait le filtre des protections existantes, et `mapKind` en faisait un stop.
+       */
+      const MEASURED_TRAILING = {
+        coin: 'BTC',
+        side: 'A',
+        limitPx: '1481.0',
+        sz: '0.0065',
+        oid: 607485054558,
+        timestamp: 1794866197053,
+        triggerCondition: 'Activation immediate, retracement 10%, best 1828.3',
+        isTrigger: true,
+        triggerPx: '1645.47',
+        children: [],
+        isPositionTpsl: false,
+        reduceOnly: true,
+        orderType: 'Trailing Stop Market',
+        origSz: '0.0065',
+        tif: null,
+        cloid: null,
+      };
+
+      let warn: jest.SpyInstance;
+      beforeEach(() => {
+        warn = jest
+          .spyOn(Logger.prototype, 'warn')
+          .mockImplementation(() => undefined);
+      });
+      afterEach(() => warn.mockRestore());
+
+      it('does not cancel it as a surplus stop when the plan holds no stop', async () => {
+        getFrontendOpenOrdersSpy.mockResolvedValue([MEASURED_TRAILING]);
+
+        const result = await service.placeBatchProtectiveOrders(
+          { assetName, isBuy: false },
+          false,
+        );
+
+        expect(cancelOrderSpy).not.toHaveBeenCalled();
+        expect(result.sl.cancelled).toEqual([]);
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining(
+            '[BTC] 1 reduce-only trigger order(s) of a type this gateway does not manage, left untouched: ' +
+              'Trailing Stop Market oid 607485054558 (SELL 0.0065, "Activation immediate, retracement 10%, best 1828.3")',
+          ),
+        );
+      });
+
+      it('does not modify it into the planned stop: the stop is created beside it', async () => {
+        getFrontendOpenOrdersSpy.mockResolvedValue([MEASURED_TRAILING]);
+        placeOrderSpy.mockResolvedValueOnce({
+          response: { data: { statuses: [{ resting: { oid: 3001 } }] } },
+        });
+
+        const result = await service.placeBatchProtectiveOrders(
+          { assetName, isBuy: false, sl: [{ sz: '0.0065', price: '1700' }] },
+          false,
+        );
+
+        expect(batchModifyOrdersSpy).not.toHaveBeenCalled();
+        expect(cancelOrderSpy).not.toHaveBeenCalled();
+        expect(result.sl.created).toEqual([3001]);
+        expect(result.sl.updated).toEqual([]);
+      });
+    });
+
     it('should update existing TP and SL orders', async () => {
       getFrontendOpenOrdersSpy.mockResolvedValue([
         makeOrderFromSpec('101_0.5_9000_tp', assetName),
