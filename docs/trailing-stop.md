@@ -117,13 +117,16 @@ posé par le gateway ».
   stop vaut le meilleur prix × (1 + repli), et `limitPx` ≈ stop × 1,1, miroir du × 0,9 de la vente.
 - **Le pourcentage relu porte un artefact de flottant** : `retracement 3.5000000000000004%` pour 3,5 % posé depuis
   l'interface officielle. Un lecteur ne doit pas le comparer en texte à ce qu'il a signé.
-- ⚠️ **`frontendOpenOrders` et `orderStatus` rendent deux stops différents pour le même ordre, au même instant** : best
-  1 785,44 / stop 1 847,93 contre best 1 791,3 / stop 1 854,0. Lequel déclenche n'est pas établi. Le relevé : dépôt du
-  bot, `docs/hyperliquid/live-check.md`, S5.
+- **`orderStatus` rend l'état de la pose, figé ; `frontendOpenOrders` suit le watermark** (S5 puis S6, BTC). Un achat
+  reduce-only à 0,3 % a été rempli à 65 000, 0,255 % sous le stop figé d'`orderStatus` : ce stop n'était pas appliqué.
+  L'état courant d'un trailing stop se lit donc dans `frontendOpenOrders`, jamais dans `orderStatus`. Le relevé : dépôt
+  du bot, `docs/hyperliquid/live-check.md`, S5 et S6.
+- **Un déclenchement** se remplit sous l'oid du trailing ; l'ordre passe `filled`, son `triggerCondition` devient
+  `"Triggered"` et `triggerPx` `"0.0"`.
 
 ## ⚠️ Ce qui n'est pas mesuré
 
-- une activation atteinte, un déclenchement ; lequel de `frontendOpenOrders` ou `orderStatus` dit le stop réel ;
+- une activation atteinte ; un déclenchement à la vente ;
 - qu'une **distance en prix** (`retracement.px`) doive tomber sur la grille de prix : elle n'est pas un prix, mais la
   tenir sur la grille évite d'en envoyer une que l'exchange arrondirait ;
 - les **bornes** d'un pourcentage acceptable, entre 10 % (accepté) et 100 % (refusé) ;
