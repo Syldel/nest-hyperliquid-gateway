@@ -36,11 +36,22 @@ Le code : `utils/trailing-stop-action.ts` (construction de l'action et lecture d
 
 ## Ce que le gateway refuse avant de signer (400)
 
-| Code                               | Pourquoi                                                                                    |
-| ---------------------------------- | ------------------------------------------------------------------------------------------- |
-| `TRAILING_STOP_MARKET_UNSUPPORTED` | pas un perp du dex principal : spot, outcome (pas de trailing stop), dex HIP-3 (non mesuré) |
-| `UNKNOWN_ASSET`                    | inconnu du registre                                                                         |
-| `TRAILING_STOP_INVALID`            | hors grille, nul, plus de quatre décimales en `pct`, ni ou les deux de `pct` / `px`         |
+| Code                                  | Pourquoi                                                                                               |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `TRAILING_STOP_MARKET_UNSUPPORTED`    | pas un perp du dex principal : spot, outcome (pas de trailing stop), dex HIP-3 (non mesuré)            |
+| `UNKNOWN_ASSET`                       | inconnu du registre                                                                                    |
+| `TRAILING_STOP_INVALID`               | hors grille, nul, plus de quatre décimales en `pct`, ni ou les deux de `pct` / `px`                    |
+| `TRAILING_STOP_ACTIVATION_WRONG_SIDE` | activation du mauvais côté du marqué (ou au marqué) : sous lui pour une vente, au-dessus pour un achat |
+| `INVALID_MARKET_DATA`                 | une activation est demandée et le marqué est illisible : rien n'est signé sans ce contrôle             |
+
+**Le sens de l'activation** se contrôle contre le prix marqué, lu par `metaAndAssetCtxs` (poids 20, la lecture des ordres
+instantanés) **seulement quand une activation est demandée**. L'exchange, lui, accepte le mauvais côté et suit tout de
+suite (mesuré le 2026-11-17, voir plus bas). ⚠️ Le marqué est lu un instant avant la signature : une activation à quelques
+ticks peut être franchie entre les deux.
+
+⚠️ **Le code ne parvient pas à l'appelant** (mesuré le 2026-11-17). Le filtre global `ValidationExceptionFilter` réécrit
+tout 400 en `{"statusCode":400,"message":"Validation failed","errors":<texte>}` : le texte du refus passe dans `errors`,
+le code est perdu. Vrai de tous les 400 du gateway, pas seulement de cette route.
 
 **Une valeur hors grille est refusée, jamais tronquée**, avec la valeur la plus proche en dessous dans le message. Un
 stop suiveur dont la taille ou la distance auraient été rabotées en silence n'est plus celui qu'on a demandé. La grille
@@ -87,17 +98,28 @@ réponse brute est journalisée, succès compris, tant que cette famille est en 
 l'exchange. C'est vrai de tous les `EXCHANGE_ERROR_*`, pas seulement de cette route ; sans effet tant que le moteur ne
 pose pas de trailing stop.
 
+## Mesuré le 2026-11-17
+
+ETH, à la vente, pas à pas S1 à S4. Le détail : dépôt du bot, `docs/hyperliquid/live-check.md`, « Le trailing stop natif
+posé par le gateway ».
+
+- **Notre signature est acceptée et la réponse a la forme de la doc** :
+  `{"status":"ok","response":{"type":"trailingStop","data":{"oid":607975946526}}}`, en pourcentage sans activation comme
+  en distance en prix avec activation, reduce-only ou non.
+- **Un refus a la forme `HLRefusedResponse`** : `{"status":"err","response":"Trailing stop retracement is invalid."}` pour
+  un repli de 100 %. La borne exacte reste inconnue (10 % passe).
+- ⚠️ **Une activation du mauvais côté est ACCEPTÉE**, pas refusée : une vente avec `activationPx` sous le marqué a
+  commencé à suivre tout de suite (`Activation above 1719.4 … best 1809.9`). L'ordre posé n'est pas celui qu'on croit
+  avoir demandé, et rien ne le signale. Le client officiel refuse cette saisie ; **le gateway aussi, depuis le même
+  jour** (`TRAILING_STOP_ACTIVATION_WRONG_SIDE`, ci-dessus).
+- Un trailing stop s'annule par un `cancel` ordinaire, en lot.
+
 ## ⚠️ Ce qui n'est pas mesuré
 
-- **notre signature** : une action neuve, jamais envoyée par ce gateway. Un hachage faux se lirait « User or API Wallet
-  … does not exist » ;
-- **la forme de la réponse** : celle de la doc, jamais vue ;
-- **les refus** : leur forme et leur texte (activation du mauvais côté, pourcentage démesuré) ;
+- **un achat** (`Activation below`), une activation atteinte, un déclenchement ;
 - qu'une **distance en prix** (`retracement.px`) doive tomber sur la grille de prix : elle n'est pas un prix, mais la
   tenir sur la grille évite d'en envoyer une que l'exchange arrondirait ;
-- les **bornes** d'un pourcentage acceptable ;
-- le **sens de l'activation** : le client officiel exige, à l'achat, une activation sous le prix marqué et, à la vente,
-  au-dessus. Le gateway ne le contrôle pas : l'exchange a le prix marqué, et son refus se lit dans la réponse ;
+- les **bornes** d'un pourcentage acceptable, entre 10 % (accepté) et 100 % (refusé) ;
 - un **dex HIP-3** : refusé par le gateway tant qu'il n'est pas mesuré.
 
 La sonde qui les mesure, à la main de l'utilisateur et un pas à la fois : dépôt du bot,

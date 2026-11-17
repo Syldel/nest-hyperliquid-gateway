@@ -37,13 +37,16 @@ import {
  * de hacher, donc on ne prend pas le pari. Au plus quatre décimales en entrée :
  * une cinquième serait tronquée par cette écriture.
  *
- * ⚠️ Non mesurés à la date de ce module : qu'une distance en prix
- * (`retracement.px`) doive tomber sur la grille de prix — elle n'est pas un
- * prix, mais la tenir sur la grille évite d'en envoyer une que l'exchange
- * arrondirait ; les bornes d'un pourcentage acceptable ; et le sens de
- * l'activation (le client officiel exige, à l'achat, une activation sous le
- * prix marqué et, à la vente, au-dessus — contrôle laissé à l'exchange, qui
- * a le prix marqué, et dont le refus se lit dans la réponse).
+ * **Le sens de l'activation n'est pas contrôlé par l'exchange.** Mesuré le
+ * 2026-11-17 : une vente dont l'activation est SOUS le marqué est acceptée
+ * et suit tout de suite, sans rien dire. `buildTrailingStopAction` n'a pas le
+ * marqué ; `activationSideRefusal` fait le contrôle, appelé par le service
+ * avec le marqué qu'il lit. Voir `docs/trailing-stop.md`.
+ *
+ * ⚠️ Non mesurés : qu'une distance en prix (`retracement.px`) doive tomber
+ * sur la grille de prix — elle n'est pas un prix, mais la tenir sur la grille
+ * évite d'en envoyer une que l'exchange arrondirait ; la borne d'un
+ * pourcentage, entre 10 % (accepté) et 100 % (refusé).
  * ============================================================================
  */
 
@@ -193,11 +196,43 @@ function stripLeadingZeros(int: string): string {
 }
 
 /**
+ * Une activation du mauvais côté du prix marqué, ou `null` si elle est du bon.
+ *
+ * **Mesuré le 2026-11-17** : l'exchange ACCEPTE une vente dont l'activation est
+ * sous le marqué, et la condition « au-dessus de » étant déjà remplie, le suivi
+ * commence tout de suite (`Activation above 1719.4 … best 1809.9` pour un
+ * marqué de 1 809,9). L'ordre posé n'est pas celui qu'on a demandé, et rien ne
+ * le dit. Le client officiel refuse cette saisie : à la vente l'activation doit
+ * être au-dessus du marqué, à l'achat en dessous. On applique la même règle,
+ * égalité comprise — une activation au marqué n'attend rien.
+ *
+ * ⚠️ Le marqué est lu un instant avant la signature : une activation à
+ * quelques ticks du marqué peut être franchie entre les deux. L'écart est celui
+ * d'un marché qui bouge, pas d'une saisie inversée.
+ */
+export function activationSideRefusal(
+  isBuy: boolean,
+  activationPx: string,
+  markPx: string,
+): string | null {
+  const activation = Number(activationPx);
+  const mark = Number(markPx);
+  if (!Number.isFinite(mark) || mark <= 0) {
+    return `the mark price reads "${markPx}": the activation side cannot be checked`;
+  }
+  const waits = isBuy ? activation < mark : activation > mark;
+  if (waits) return null;
+  return isBuy
+    ? `a buy activates below the mark: activationPx ${activationPx} is not below the mark ${markPx}, so tracking would start at once`
+    : `a sell activates above the mark: activationPx ${activationPx} is not above the mark ${markPx}, so tracking would start at once`;
+}
+
+/**
  * ============================================================================
  * LA RÉPONSE : TROIS ISSUES, DONT UNE QUI NE SAIT PAS
  *
  * - `placed` : `{ status: 'ok', response: { type: 'trailingStop', data: { oid } } }`,
- *   la forme de la doc (⚠️ non mesurée à la date de ce module) ;
+ *   la forme de la doc, mesurée le 2026-11-17 (`docs/trailing-stop.md`) ;
  * - `refused` : `{ status: 'err', response: <texte> }`, le refus d'une action
  *   entière, que le client officiel lit ainsi ;
  * - `unknown` : tout le reste. **L'ordre a pu être posé** : l'action n'a pas

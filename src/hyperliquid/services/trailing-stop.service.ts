@@ -6,8 +6,10 @@ import {
 
 import { AssetRegistryService } from './asset-registry.service';
 import { HyperliquidApiTradeService } from './hyperliquid-api-trade.service';
+import { HyperliquidApiPublicInfoService } from './hyperliquid-api-public-info.service';
 import { HyperliquidGatewayException } from '../exceptions/hyperliquid-gateway.exception';
 import {
+  activationSideRefusal,
   buildTrailingStopAction,
   readTrailingStopAnswer,
   TrailingStopRequest,
@@ -40,7 +42,10 @@ export interface PlacedTrailingStop {
  *    n'a pas été mesuré, donc il est refusé plutôt que tenté ;
  * 2. **des valeurs déjà sur la grille**, refusées sinon (400), jamais
  *    tronquées : voir `buildTrailingStopAction` ;
- * 3. **une réponse lue, pas supposée** : l'oid d'un ordre posé, le texte d'un
+ * 3. **une activation du bon côté du marqué** : au-dessus pour une vente, en
+ *    dessous pour un achat. L'exchange accepte l'autre côté et suit tout de
+ *    suite, sans rien dire (mesuré le 2026-11-17) ;
+ * 4. **une réponse lue, pas supposée** : l'oid d'un ordre posé, le texte d'un
  *    refus, ou une issue inconnue qui dit qu'il faut relire les ordres ouverts.
  *
  * **Aucune relance.** L'action n'a pas de `cloid` : un second envoi après une
@@ -61,6 +66,7 @@ export class TrailingStopService {
   constructor(
     private readonly assetRegistry: AssetRegistryService,
     private readonly tradeService: HyperliquidApiTradeService,
+    private readonly publicInfoService: HyperliquidApiPublicInfoService,
   ) {}
 
   async placeTrailingStop(
@@ -68,6 +74,7 @@ export class TrailingStopService {
     isTestnet = false,
   ): Promise<PlacedTrailingStop> {
     const action = this.toAction(params);
+    await this.requireActivationSide(params.assetName, action, isTestnet);
     this.logger.log(`Place trailing stop: ${JSON.stringify(action)}`);
 
     let reply: unknown;
@@ -108,6 +115,43 @@ export class TrailingStopService {
           `Unexpected Hyperliquid answer for a trailing stop: ${raw}. It may have been placed: read the open orders before anything else.`,
           HttpStatus.BAD_GATEWAY,
         );
+    }
+  }
+
+  /**
+   * Refuse une activation du mauvais côté du marqué (voir `activationSideRefusal`). Le marqué n'est lu que s'il y a une
+   * activation : un suivi immédiat ne coûte aucune lecture. Lecture `metaAndAssetCtxs`, poids 20, la même que les ordres
+   * instantanés. Un marqué illisible refuse l'ordre : on ne signe pas ce qu'on n'a pas pu contrôler.
+   */
+  private async requireActivationSide(
+    assetName: string,
+    action: HLTrailingStopAction,
+    isTestnet: boolean,
+  ): Promise<void> {
+    if (action.activationPx === null) return;
+
+    const markets = await this.publicInfoService.getPerpMarketsWithPrices(
+      '',
+      isTestnet,
+    );
+    const markPx = markets.find((m) => m.name === assetName)?.markPrice;
+    if (markPx === undefined) {
+      throw new HyperliquidGatewayException(
+        'INVALID_MARKET_DATA',
+        `No mark price for ${assetName}: the activation side cannot be checked, nothing was signed`,
+      );
+    }
+
+    const refusal = activationSideRefusal(
+      action.isBuy,
+      action.activationPx,
+      markPx,
+    );
+    if (refusal) {
+      throw new HyperliquidGatewayException(
+        'TRAILING_STOP_ACTIVATION_WRONG_SIDE',
+        refusal,
+      );
     }
   }
 

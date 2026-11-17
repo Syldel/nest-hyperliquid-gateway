@@ -2,6 +2,7 @@ import { encode as encodeMsgpack } from '@msgpack/msgpack';
 
 import { SigningService } from '../../crypto/services/signing.service';
 import {
+  activationSideRefusal,
   buildTrailingStopAction,
   encodePct,
   readTrailingStopAnswer,
@@ -183,6 +184,32 @@ describe('buildTrailingStopAction', () => {
     const hashed = new SigningService().normalizeTrailingZeros(action);
 
     expect(encodeMsgpack(hashed)).toEqual(encodeMsgpack(action));
+  });
+});
+
+describe('activationSideRefusal', () => {
+  it.each([
+    ['a sell above the mark', false, '2355'],
+    ['a buy below the mark', true, '1700'],
+  ])('accepts %s', (_label, isBuy, activationPx) => {
+    expect(activationSideRefusal(isBuy, activationPx, '1809.9')).toBeNull();
+  });
+
+  it.each([
+    ['a sell below the mark (measured: tracked at once)', false, '1719.4'],
+    ['a buy above the mark', true, '1900'],
+    ['a sell at the mark', false, '1809.9'],
+    ['a buy at the mark', true, '1809.9'],
+  ])('refuses %s', (_label, isBuy, activationPx) => {
+    expect(activationSideRefusal(isBuy, activationPx, '1809.9')).toContain(
+      'tracking would start at once',
+    );
+  });
+
+  it('refuses when the mark cannot be read', () => {
+    expect(activationSideRefusal(false, '2355', '')).toContain(
+      'cannot be checked',
+    );
   });
 });
 
