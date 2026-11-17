@@ -9,6 +9,7 @@ import { HyperliquidFillsController } from './controllers/hyperliquid-fills.cont
 import { InstantOrderController } from './controllers/instant-order.controller';
 import { ProtectiveOrdersController } from './controllers/protective-order.controller';
 import { PositionProtectiveOrdersController } from './controllers/position-protective-order.controller';
+import { TrailingStopController } from './controllers/trailing-stop.controller';
 import { HyperliquidConfigService } from './config/hyperliquid-config.service';
 import { HyperliquidApiTradeService } from './services/hyperliquid-api-trade.service';
 import { HyperliquidApiPrivateInfoService } from './services/hyperliquid-api-private-info.service';
@@ -21,6 +22,7 @@ import { SmartOrderService } from './services/smart-order.service';
 import { DecimalUtilsService } from './utils/decimal-utils.service';
 import { PriceMathService } from './services/price-math.service';
 import { HyperliquidCollateralService } from './services/hyperliquid-collateral.service';
+import { TrailingStopService } from './services/trailing-stop.service';
 
 @Module({
   imports: [AuthModule, CryptoModule],
@@ -32,6 +34,7 @@ import { HyperliquidCollateralService } from './services/hyperliquid-collateral.
     InstantOrderController,
     ProtectiveOrdersController,
     PositionProtectiveOrdersController,
+    TrailingStopController,
   ],
   providers: [
     HyperliquidRateGuardService,
@@ -46,6 +49,7 @@ import { HyperliquidCollateralService } from './services/hyperliquid-collateral.
     DecimalUtilsService,
     PriceMathService,
     HyperliquidCollateralService,
+    TrailingStopService,
   ],
 })
 export class HyperliquidModule {}

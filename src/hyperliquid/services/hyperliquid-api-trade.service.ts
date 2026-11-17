@@ -32,6 +32,9 @@ import {
   HLOrderBuilder,
   HLPlaceOrderResponse,
   HLOid,
+  HLTrailingStopAction,
+  HLTrailingStopResponseData,
+  HLRefusedResponse,
 } from '@syldel/hl-shared-types';
 import { NonceManagerService } from '../../crypto/services/nonce-manager.service';
 import { ValueFormatterService } from './value-formatter.service';
@@ -731,9 +734,26 @@ export class HyperliquidApiTradeService {
     return result;
   }
 
-  // =============================================
-  // Méthodes pour les ordres TWAP
-  // =============================================
+  /**
+   * Pose un trailing stop natif. L'action arrive **déjà construite** par
+   * `buildTrailingStopAction` (`utils/trailing-stop-action.ts`) : ses valeurs
+   * doivent être canoniques avant la signature, et l'ordre de ses clés est
+   * celui du hachage. Rien n'est réécrit ici.
+   *
+   * La réponse n'est pas typée comme acquise : elle se lit par
+   * `readTrailingStopAnswer`, parce qu'aucune n'a encore été mesurée.
+   */
+  async placeTrailingStop(
+    action: HLTrailingStopAction,
+    isTestnet: boolean = false,
+  ): Promise<
+    HLSuccessResponse<HLTrailingStopResponseData> | HLRefusedResponse
+  > {
+    return this.executeWithNonce<
+      HLTrailingStopAction,
+      HLSuccessResponse<HLTrailingStopResponseData> | HLRefusedResponse
+    >('exchange', action, isTestnet);
+  }
 
   /**
    * Place un ordre TWAP.

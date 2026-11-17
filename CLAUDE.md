@@ -77,6 +77,10 @@ relancer un 429** (voir la première règle).
   famille de routes**, `/orders/position-protective` : aucune route existante ne l'accepte, et
   `formatSize` refuse toujours un zéro. Voir [docs/position-level-orders.md](docs/position-level-orders.md),
   y compris ce qui n'en est pas mesuré.
+- **Le trailing stop natif** (`trailingStop`, 2026-09-21) a sa route, `POST /orders/trailing-stop`. Il s'ajoute au stop
+  du bot, jamais à sa place. Ses valeurs partent **canoniques et sur la grille, sinon refusées** : le normaliseur de la
+  signature ne touche pas ses clés. Il n'a pas de cloid, donc **aucune relance**. Voir
+  [docs/trailing-stop.md](docs/trailing-stop.md), y compris ce qui n'en est pas mesuré.
 - **Ne jamais committer, tagger ou pousser sans demande explicite** : proposer un message
   de commit conventionnel, en anglais, et laisser l'utilisateur l'exécuter — comme dans les
   autres dépôts.
