@@ -123,6 +123,11 @@ posé par le gateway ».
   du bot, `docs/hyperliquid/live-check.md`, S5 et S6.
 - **Un déclenchement** se remplit sous l'oid du trailing ; l'ordre passe `filled`, son `triggerCondition` devient
   `"Triggered"` et `triggerPx` `"0.0"`.
+- **Sur un dex HIP-3** (2026-11-19, `xyz:BRENTOIL`, S7) : notre signature est acceptée sous la même réponse, pour l'actif
+  **110049** (= 100000 + 1 × 10000 + 49, la règle du registre) ; relu dans `frontendOpenOrders` de `xyz` sous la même
+  forme, le stop = best × 0,9 au chiffre près, monté avec un nouveau plus haut ; annulé par la route ordinaire. Le refus
+  du mauvais côté cite le marqué lu sur `xyz` (90,616). Ouvert par `d7f8273` : il était refusé, et le marqué du contrôle
+  d'activation se lisait au dex principal.
 
 ## ⚠️ Ce qui n'est pas mesuré
 
@@ -130,11 +135,8 @@ posé par le gateway ».
 - qu'une **distance en prix** (`retracement.px`) doive tomber sur la grille de prix : elle n'est pas un prix, mais la
   tenir sur la grille évite d'en envoyer une que l'exchange arrondirait ;
 - les **bornes** d'un pourcentage acceptable, entre 10 % (accepté) et 100 % (refusé) ;
-- la pose sur un **dex HIP-3** par cette route. Ouverte le 2026-11-19 (elle était refusée) : l'identifiant d'actif
-  (`100000 + dex × 10000 + index`) est celui que les ordres ordinaires signent déjà sur `xyz`, un trailing posé depuis
-  l'interface officielle sur `xyz:NVDA` se lit comme au dex principal, et le marqué du contrôle d'activation se lit
-  désormais sur le dex de la paire (il était lu au dex principal, où un HIP-3 n'a pas de marqué). Reste à mesurer
-  que l'exchange accepte notre signature pour un actif HIP-3 : sonde du bot, `--coin xyz:<paire>`.
+- sur un **dex HIP-3** : une activation atteinte, un déclenchement, un achat (seule une vente reduce-only immédiate y
+  est mesurée, S7).
 
 La sonde qui les mesure, à la main de l'utilisateur et un pas à la fois : dépôt du bot,
 `scripts/live-check/trailing-stop-api.ts`.
