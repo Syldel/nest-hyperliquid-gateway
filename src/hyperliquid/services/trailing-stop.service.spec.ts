@@ -29,6 +29,11 @@ const ETH_STOP: TrailingStopParams = {
 
 const ASSETS: Record<string, { id: number; szDecimals: number }> = {
   ETH: { id: 1, szDecimals: 4 },
+  // Un HIP-3 : identifiant selon la règle du registre (100000 + dex × 10000 +
+  // index), valeurs choisies pour le test, pas relevées.
+  'xyz:TSLA': { id: 110_003, szDecimals: 3 },
+  // Un registre qui donnerait à un nom HIP-3 un identifiant du dex principal.
+  'xyz:BROKEN': { id: 5, szDecimals: 3 },
 };
 
 /** Le marqué d'ETH lors de S4, le 2026-11-17. */
@@ -54,6 +59,7 @@ async function setup(
           getAssetId: (name: string) => ASSETS[name]?.id,
           getSzDecimals: (name: string) => ASSETS[name]?.szDecimals,
           isPerpById: (id: number) => id >= 0 && id < 10_000,
+          isBuilderById: (id: number) => id >= 100_000,
         },
       },
     ],
@@ -107,7 +113,6 @@ describe('TrailingStopService', () => {
     it.each([
       ['a spot pair', 'PURR/USDC'],
       ['a spot pair by index', '@107'],
-      ['a builder-deployed perp', 'xyz:TSLA'],
       ['an outcome', '#10'],
     ])('%s', async (_label, assetName) => {
       const place = jest.fn();
@@ -124,6 +129,20 @@ describe('TrailingStopService', () => {
       expect(place).not.toHaveBeenCalled();
     });
 
+    // Le nom dit HIP-3, l'identifiant dit dex principal : signer serait
+    // poser sur un autre marché.
+    it('a HIP-3 name the registry maps to a main-dex id', async () => {
+      const place = jest.fn();
+      const service = await setup(place);
+
+      const refused = await rejection(
+        service.placeTrailingStop({ ...ETH_STOP, assetName: 'xyz:BROKEN' }),
+      );
+
+      expect(refused.error).toBe('TRAILING_STOP_MARKET_UNSUPPORTED');
+      expect(place).not.toHaveBeenCalled();
+    });
+
     it('an unknown asset', async () => {
       const place = jest.fn();
       const service = await setup(place);
@@ -134,6 +153,43 @@ describe('TrailingStopService', () => {
 
       expect(refused).toMatchObject({ status: 400, error: 'UNKNOWN_ASSET' });
       expect(place).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('on a HIP-3 dex', () => {
+    const placed = () =>
+      jest.fn().mockResolvedValue({
+        status: 'ok',
+        response: { type: 'trailingStop', data: { oid: 9 } },
+      });
+    const TSLA_STOP = {
+      ...ETH_STOP,
+      assetName: 'xyz:TSLA',
+      sz: '0.05',
+    };
+
+    it('signs with the HIP-3 asset id', async () => {
+      const place = placed();
+      const service = await setup(place);
+
+      const { action } = await service.placeTrailingStop(TSLA_STOP);
+
+      expect(action.asset).toBe(110_003);
+    });
+
+    // Lu au dex principal, le marqué d'un HIP-3 manquait : la pose était
+    // refusée pour « No mark price ».
+    it('reads the mark price on the dex of the pair', async () => {
+      const markets = jest
+        .fn()
+        .mockResolvedValue([{ name: 'xyz:TSLA', markPrice: '400' }]);
+      const place = placed();
+      const service = await setup(place, markets);
+
+      await service.placeTrailingStop({ ...TSLA_STOP, activationPx: '450' });
+
+      expect(markets).toHaveBeenCalledWith('xyz', false);
+      expect(place).toHaveBeenCalledTimes(1);
     });
   });
 

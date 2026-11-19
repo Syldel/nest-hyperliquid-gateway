@@ -36,13 +36,13 @@ Le code : `utils/trailing-stop-action.ts` (construction de l'action et lecture d
 
 ## Ce que le gateway refuse avant de signer (400)
 
-| Code                                  | Pourquoi                                                                                               |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `TRAILING_STOP_MARKET_UNSUPPORTED`    | pas un perp du dex principal : spot, outcome (pas de trailing stop), dex HIP-3 (non mesuré)            |
-| `UNKNOWN_ASSET`                       | inconnu du registre                                                                                    |
-| `TRAILING_STOP_INVALID`               | hors grille, nul, plus de quatre décimales en `pct`, ni ou les deux de `pct` / `px`                    |
-| `TRAILING_STOP_ACTIVATION_WRONG_SIDE` | activation du mauvais côté du marqué (ou au marqué) : sous lui pour une vente, au-dessus pour un achat |
-| `INVALID_MARKET_DATA`                 | une activation est demandée et le marqué est illisible : rien n'est signé sans ce contrôle             |
+| Code                                  | Pourquoi                                                                                                          |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `TRAILING_STOP_MARKET_UNSUPPORTED`    | pas un perp : spot, outcome (pas de trailing stop) ; ou un nom HIP-3 que le registre lie à un autre genre d'actif |
+| `UNKNOWN_ASSET`                       | inconnu du registre                                                                                               |
+| `TRAILING_STOP_INVALID`               | hors grille, nul, plus de quatre décimales en `pct`, ni ou les deux de `pct` / `px`                               |
+| `TRAILING_STOP_ACTIVATION_WRONG_SIDE` | activation du mauvais côté du marqué (ou au marqué) : sous lui pour une vente, au-dessus pour un achat            |
+| `INVALID_MARKET_DATA`                 | une activation est demandée et le marqué est illisible : rien n'est signé sans ce contrôle                        |
 
 **Le sens de l'activation** se contrôle contre le prix marqué, lu par `metaAndAssetCtxs` (poids 20, la lecture des ordres
 instantanés) **seulement quand une activation est demandée**. L'exchange, lui, accepte le mauvais côté et suit tout de
@@ -130,7 +130,11 @@ posé par le gateway ».
 - qu'une **distance en prix** (`retracement.px`) doive tomber sur la grille de prix : elle n'est pas un prix, mais la
   tenir sur la grille évite d'en envoyer une que l'exchange arrondirait ;
 - les **bornes** d'un pourcentage acceptable, entre 10 % (accepté) et 100 % (refusé) ;
-- un **dex HIP-3** : refusé par le gateway tant qu'il n'est pas mesuré.
+- la pose sur un **dex HIP-3** par cette route. Ouverte le 2026-11-19 (elle était refusée) : l'identifiant d'actif
+  (`100000 + dex × 10000 + index`) est celui que les ordres ordinaires signent déjà sur `xyz`, un trailing posé depuis
+  l'interface officielle sur `xyz:NVDA` se lit comme au dex principal, et le marqué du contrôle d'activation se lit
+  désormais sur le dex de la paire (il était lu au dex principal, où un HIP-3 n'a pas de marqué). Reste à mesurer
+  que l'exchange accepte notre signature pour un actif HIP-3 : sonde du bot, `--coin xyz:<paire>`.
 
 La sonde qui les mesure, à la main de l'utilisateur et un pas à la fois : dépôt du bot,
 `scripts/live-check/trailing-stop-api.ts`.

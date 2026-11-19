@@ -1,6 +1,7 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import {
   hlMarketKind,
+  hlPerpDexOf,
   type HLTrailingStopAction,
 } from '@syldel/hl-shared-types';
 
@@ -37,9 +38,14 @@ export interface PlacedTrailingStop {
  *
  * Ce que ce service garantit, dans cet ordre :
  *
- * 1. **un perp du dex principal**, et rien d'autre. Le spot et les outcomes
- *    n'ont pas de trailing stop (« available for perp markets ») ; un dex HIP-3
- *    n'a pas été mesuré, donc il est refusé plutôt que tenté ;
+ * 1. **un perp**, du dex principal ou d'un dex HIP-3, et rien d'autre. Le
+ *    spot et les outcomes n'ont pas de trailing stop (« available for perp
+ *    markets »). HIP-3 est ouvert le 2026-11-19 : un trailing posé depuis
+ *    l'interface officielle sur `xyz:NVDA` se lit comme au dex principal
+ *    (2026-11-17), et l'identifiant d'actif (`100000 + dex × 10000 + index`)
+ *    est celui que les ordres ordinaires du bot signent déjà sur `xyz`.
+ *    ⚠️ La pose par CETTE route sur un dex HIP-3 n'est pas encore mesurée :
+ *    `docs/trailing-stop.md` ;
  * 2. **des valeurs déjà sur la grille**, refusées sinon (400), jamais
  *    tronquées : voir `buildTrailingStopAction` ;
  * 3. **une activation du bon côté du marqué** : au-dessus pour une vente, en
@@ -130,8 +136,10 @@ export class TrailingStopService {
   ): Promise<void> {
     if (action.activationPx === null) return;
 
+    // Le marqué se lit sur le dex de la paire : lu au dex principal, celui
+    // d'un HIP-3 manquait, et la pose était refusée (« No mark price »).
     const markets = await this.publicInfoService.getPerpMarketsWithPrices(
-      '',
+      hlPerpDexOf(assetName) ?? '',
       isTestnet,
     );
     const markPx = markets.find((m) => m.name === assetName)?.markPrice;
@@ -158,10 +166,11 @@ export class TrailingStopService {
   private toAction(params: TrailingStopParams): HLTrailingStopAction {
     const { assetName } = params;
 
-    if (hlMarketKind(assetName) !== 'perp') {
+    const kind = hlMarketKind(assetName);
+    if (kind !== 'perp' && kind !== 'builderPerp') {
       throw new HyperliquidGatewayException(
         'TRAILING_STOP_MARKET_UNSUPPORTED',
-        `Trailing stops are placed on main-dex perps only, not on ${assetName}`,
+        `Trailing stops are placed on perps only, not on ${assetName}`,
       );
     }
 
@@ -173,10 +182,17 @@ export class TrailingStopService {
         `Unknown asset: ${assetName}`,
       );
     }
-    if (!this.assetRegistry.isPerpById(asset)) {
+    // Le nom et l'identifiant doivent dire le même genre : un perp du dex
+    // principal sous 10 000, un HIP-3 à partir de 100 000. Un registre qui les
+    // ferait diverger signerait pour un autre marché que celui demandé.
+    const idMatches =
+      kind === 'perp'
+        ? this.assetRegistry.isPerpById(asset)
+        : this.assetRegistry.isBuilderById(asset);
+    if (!idMatches) {
       throw new HyperliquidGatewayException(
         'TRAILING_STOP_MARKET_UNSUPPORTED',
-        `${assetName} resolves to asset ${asset}, which is not a main-dex perp`,
+        `${assetName} resolves to asset ${asset}, which is not a ${kind === 'perp' ? 'main-dex' : 'HIP-3'} perp`,
       );
     }
 
